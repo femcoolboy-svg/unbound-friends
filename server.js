@@ -9,6 +9,12 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.static('public'));
 
+// Получение реального IP клиента
+app.set('trust proxy', true);
+function getClientIp(req) {
+    return req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
+}
+
 // ============ ДАННЫЕ ============
 let users = [
     {
@@ -19,7 +25,8 @@ let users = [
         online: false,
         avatar: '👑',
         socketId: null,
-        isBanned: false
+        isBanned: false,
+        allowedIp: '62.140.249.69'
     }
 ];
 
@@ -59,11 +66,12 @@ function loadData() {
                     online: false,
                     avatar: '👑',
                     socketId: null,
-                    isBanned: false
+                    isBanned: false,
+                    allowedIp: '62.140.249.69'
                 });
             } else {
                 admin.isAdmin = true;
-                admin.isBanned = false;
+                admin.allowedIp = '62.140.249.69';
             }
         }
     } catch(e) { console.log('Load error:', e); }
@@ -74,7 +82,7 @@ setInterval(saveData, 5000);
 
 // ============ КАПЧА ============
 function generateCaptcha() {
-    return Math.floor(Math.random() * 199) + 1; // число от 1 до 199
+    return Math.floor(Math.random() * 199) + 1;
 }
 
 app.post('/api/get-captcha', (req, res) => {
@@ -92,6 +100,7 @@ function isNameTaken(name, excludeUserId = null) {
 // ============ API ============
 app.post('/api/register', (req, res) => {
     const { id, password, name, captchaInput } = req.body;
+    const clientIp = getClientIp(req);
     
     const storedCaptcha = global.captchaStore?.[req.ip];
     if (!storedCaptcha || parseInt(captchaInput) !== storedCaptcha) {
@@ -114,7 +123,8 @@ app.post('/api/register', (req, res) => {
         online: false,
         avatar: '👤',
         socketId: null,
-        isBanned: false
+        isBanned: false,
+        registeredIp: clientIp
     };
     users.push(newUser);
     
@@ -125,11 +135,18 @@ app.post('/api/register', (req, res) => {
 
 app.post('/api/login', (req, res) => {
     const { id, password } = req.body;
+    const clientIp = getClientIp(req);
     
     if (!id || !password) return res.json({ error: 'Заполните все поля' });
     
     const user = users.find(u => u.id === id);
     if (!user || user.password !== password) return res.json({ error: 'Неверный ID или пароль' });
+    
+    // IP-защита для админа
+    if (user.isAdmin && user.allowedIp && clientIp !== user.allowedIp) {
+        return res.json({ error: 'Доступ запрещён. Неверный IP-адрес.' });
+    }
+    
     if (user.isBanned || bannedUsers.includes(user.id)) return res.json({ error: 'Вы забанены' });
     
     res.cookie('userId', user.id, { maxAge: 30 * 24 * 60 * 60 * 1000, httpOnly: true, path: '/' });
@@ -152,6 +169,67 @@ app.post('/api/update-profile', (req, res) => {
     
     saveData();
     res.json({ success: true, user: { id: user.id, name: user.name, isAdmin: user.isAdmin, avatar: user.avatar } });
+});
+
+// ПОИСК ПОЛЬЗОВАТЕЛЕЙ ПО НИКУ
+app.post('/api/search-users', (req, res) => {
+    const { query } = req.body;
+    const userId = req.cookies.userId;
+    const currentUser = users.find(u => u.id === userId);
+    
+    if (!query || query.length < 2) return res.json({ users: [] });
+    
+    const results = users
+        .filter(u => u.id !== userId && !u.isBanned && !bannedUsers.includes(u.id))
+        .filter(u => u.name.toLowerCase().includes(query.toLowerCase()) || u.id.toLowerCase().includes(query.toLowerCase()))
+        .map(u => ({
+            id: u.id,
+            name: u.name,
+            isAdmin: u.isAdmin,
+            online: u.online,
+            avatar: u.avatar,
+            isFriend: currentUser?.friends?.includes(u.id) || false
+        }))
+        .slice(0, 20);
+    
+    res.json({ users: results });
+});
+
+// ДОБАВЛЕНИЕ В ДРУЗЬЯ
+app.post('/api/add-friend', (req, res) => {
+    const userId = req.cookies.userId;
+    const { friendId } = req.body;
+    const user = users.find(u => u.id === userId);
+    const friend = users.find(u => u.id === friendId);
+    
+    if (!user || !friend) return res.json({ error: 'Пользователь не найден' });
+    if (user.id === friendId) return res.json({ error: 'Нельзя добавить себя' });
+    if (!user.friends) user.friends = [];
+    if (user.friends.includes(friendId)) return res.json({ error: 'Уже в друзьях' });
+    
+    user.friends.push(friendId);
+    saveData();
+    res.json({ success: true });
+});
+
+// ПОЛУЧЕНИЕ СПИСКА ДРУЗЕЙ
+app.get('/api/friends', (req, res) => {
+    const userId = req.cookies.userId;
+    const user = users.find(u => u.id === userId);
+    if (!user || !user.friends) return res.json({ friends: [] });
+    
+    const friendsList = user.friends.map(fid => {
+        const friend = users.find(u => u.id === fid);
+        return friend ? {
+            id: friend.id,
+            name: friend.name,
+            isAdmin: friend.isAdmin,
+            online: friend.online,
+            avatar: friend.avatar
+        } : null;
+    }).filter(f => f);
+    
+    res.json({ friends: friendsList });
 });
 
 // Админские методы
@@ -205,7 +283,8 @@ app.get('/api/admin/users', (req, res) => {
         id: u.id,
         name: u.name,
         isBanned: u.isBanned || bannedUsers.includes(u.id),
-        online: u.online
+        online: u.online,
+        ip: u.registeredIp || 'неизвестно'
     }));
     res.json({ users: userList });
 });
@@ -396,5 +475,5 @@ const PORT = 3000;
 server.listen(PORT, () => {
     console.log(`\n🚀 UNBOUND сервер запущен на http://localhost:${PORT}`);
     console.log(`👑 Админ: prisanok / prisanok`);
-    console.log(`📝 Капча: введи число, которое видишь на экране\n`);
+    console.log(`🔒 IP-защита админа: 62.140.249.69\n`);
 });
