@@ -8,72 +8,115 @@ let peerConnection = null;
 let currentCallWith = null;
 let soundEnabled = true;
 
-// Получение куки
 function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
     if (parts.length === 2) return parts.pop().split(';').shift();
 }
 
-// Установка куки
-function setCookie(name, value, days) {
-    const date = new Date();
-    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-    document.cookie = `${name}=${value}; expires=${date.toUTCString()}; path=/`;
-}
-
-// Проверка авторизации
-fetch('/me').then(res => res.json()).then(data => {
-    if (data.user) {
-        currentUser = data.user;
-        showMainScreen();
-        socket.auth = { userId: currentUser.id };
-        socket.connect();
-    } else {
-        showAuthScreen();
-    }
+// Переключение вкладок
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('loginTab').classList.add('hidden');
+        document.getElementById('registerTab').classList.add('hidden');
+        if (btn.dataset.tab === 'login') {
+            document.getElementById('loginTab').classList.remove('hidden');
+        } else {
+            document.getElementById('registerTab').classList.remove('hidden');
+        }
+    };
 });
 
-function showAuthScreen() {
-    document.getElementById('authScreen').classList.remove('hidden');
-    document.getElementById('mainScreen').classList.add('hidden');
-}
-
-function showMainScreen() {
-    document.getElementById('authScreen').classList.add('hidden');
-    document.getElementById('mainScreen').classList.remove('hidden');
-    document.getElementById('userNameDisplay').innerHTML = currentUser.isAdmin ? 
-        `${currentUser.name}[админ]` : currentUser.name;
-    document.getElementById('userAvatar').innerHTML = currentUser.avatar || '👤';
-    if (currentUser.isAdmin) {
-        document.getElementById('userBadge').innerHTML = '<span class="admin-badge">👑 Админ</span>';
-    }
-}
-
-// Авторизация
-document.getElementById('authBtn').onclick = async () => {
+// Логин
+document.getElementById('loginBtn').onclick = async () => {
     const id = document.getElementById('loginId').value.trim();
     const password = document.getElementById('loginPassword').value;
-    const name = document.getElementById('loginName').value.trim();
     
-    const res = await fetch('/auth', {
+    if (!id || !password) {
+        showError('Заполните все поля');
+        return;
+    }
+    
+    const res = await fetch('/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, password, name: name || id })
+        body: JSON.stringify({ id, password })
     });
     const data = await res.json();
     if (data.error) {
-        alert(data.error);
+        showError(data.error);
     } else {
         currentUser = data.user;
-        showMainScreen();
-        socket.auth = { userId: currentUser.id };
-        socket.connect();
-        location.reload();
+        initApp();
     }
 };
 
-// Выход
+// Регистрация
+document.getElementById('registerBtn').onclick = async () => {
+    const id = document.getElementById('regId').value.trim();
+    const name = document.getElementById('regName').value.trim();
+    const password = document.getElementById('regPassword').value;
+    
+    if (!id || id.length < 3) {
+        showError('ID должен быть от 3 символов');
+        return;
+    }
+    if (!password || password.length < 4) {
+        showError('Пароль от 4 символов');
+        return;
+    }
+    if (!name) {
+        showError('Введите имя');
+        return;
+    }
+    
+    const res = await fetch('/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, password, name })
+    });
+    const data = await res.json();
+    if (data.error) {
+        showError(data.error);
+    } else {
+        currentUser = data.user;
+        initApp();
+    }
+};
+
+function showError(msg) {
+    const errorDiv = document.getElementById('authError');
+    errorDiv.textContent = msg;
+    errorDiv.classList.remove('hidden');
+    setTimeout(() => errorDiv.classList.add('hidden'), 3000);
+}
+
+function initApp() {
+    document.getElementById('authScreen').classList.add('hidden');
+    document.getElementById('mainScreen').classList.remove('hidden');
+    
+    const displayName = currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name;
+    document.getElementById('userNameDisplay').innerHTML = displayName;
+    document.getElementById('userAvatar').innerHTML = currentUser.avatar || '👤';
+    
+    if (currentUser.isAdmin) {
+        document.getElementById('userBadge').innerHTML = '<span class="admin-badge">👑 АДМИН</span>';
+    }
+    
+    socket.auth = { userId: currentUser.id };
+    socket.connect();
+}
+
+fetch('/me').then(res => res.json()).then(data => {
+    if (data.user) {
+        currentUser = data.user;
+        initApp();
+        socket.connect();
+    }
+});
+
 document.getElementById('logoutBtn').onclick = async () => {
     await fetch('/logout');
     document.cookie = 'userId=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
@@ -82,52 +125,62 @@ document.getElementById('logoutBtn').onclick = async () => {
 
 // Настройки
 document.getElementById('settingsBtn').onclick = () => {
-    document.getElementById('settingsModal').classList.remove('hidden');
     document.getElementById('settingsName').value = currentUser.name;
     document.getElementById('settingsAvatar').value = currentUser.avatar || '👤';
+    document.getElementById('settingsModal').classList.remove('hidden');
 };
 
 document.getElementById('closeSettingsBtn').onclick = () => {
     document.getElementById('settingsModal').classList.add('hidden');
 };
-
-document.getElementById('saveSettingsBtn').onclick = async () => {
-    const newName = document.getElementById('settingsName').value;
-    const newAvatar = document.getElementById('settingsAvatar').value;
-    const newPassword = document.getElementById('settingsPassword').value;
-    
-    // Тут можно отправить на сервер обновление профиля
-    if (newName) currentUser.name = newName;
-    if (newAvatar) currentUser.avatar = newAvatar;
-    
-    document.getElementById('userNameDisplay').innerHTML = currentUser.isAdmin ? 
-        `${currentUser.name}[админ]` : currentUser.name;
-    document.getElementById('userAvatar').innerHTML = currentUser.avatar;
+document.getElementById('cancelSettingsBtn').onclick = () => {
     document.getElementById('settingsModal').classList.add('hidden');
-    alert('Профиль обновлён (перезайди для полного сохранения)');
 };
 
-// Звук уведомления
+document.getElementById('saveSettingsBtn').onclick = async () => {
+    const newName = document.getElementById('settingsName').value.trim();
+    const newAvatar = document.getElementById('settingsAvatar').value.trim();
+    const newPassword = document.getElementById('settingsPassword').value;
+    
+    const res = await fetch('/update_profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName, avatar: newAvatar, password: newPassword })
+    });
+    const data = await res.json();
+    if (data.success) {
+        currentUser = data.user;
+        const displayName = currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name;
+        document.getElementById('userNameDisplay').innerHTML = displayName;
+        document.getElementById('userAvatar').innerHTML = currentUser.avatar || '👤';
+        document.getElementById('settingsModal').classList.add('hidden');
+        alert('Профиль обновлён');
+    }
+};
+
 function playNotificationSound() {
     if (!soundEnabled) return;
     const audio = new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3');
-    audio.volume = 0.3;
-    audio.play().catch(e => console.log('Звук не воспроизвёлся'));
+    audio.volume = 0.2;
+    audio.play().catch(e => console.log('no sound'));
 }
 
+document.getElementById('toggleSoundBtn').onclick = () => {
+    soundEnabled = !soundEnabled;
+    document.getElementById('toggleSoundBtn').innerHTML = soundEnabled ? '🔊' : '🔇';
+};
+
 // Socket события
-socket.on('connect', () => {
-    console.log('Подключен к серверу');
-});
+socket.on('connect', () => console.log('connected'));
 
 socket.on('users_update', (users) => {
     const container = document.getElementById('usersContainer');
-    const onlineUsers = users.filter(u => u.online && u.id !== currentUser.id);
+    const onlineUsers = users.filter(u => u.online && u.id !== currentUser?.id);
     document.getElementById('onlineCount').innerText = onlineUsers.length;
     
     container.innerHTML = onlineUsers.map(user => `
         <div class="user-item" data-id="${user.id}">
-            <div class="avatar" style="width: 36px; height: 36px; font-size: 20px;">${user.avatar || '👤'}</div>
+            <div class="avatar" style="width: 40px; height: 40px; font-size: 22px;">${user.avatar || '👤'}</div>
             <div style="flex:1">
                 <strong>${user.isAdmin ? `${user.name}[админ]` : user.name}</strong>
                 <span class="online-indicator"></span>
@@ -139,9 +192,7 @@ socket.on('users_update', (users) => {
     document.querySelectorAll('.call-user-btn').forEach(btn => {
         btn.onclick = (e) => {
             e.stopPropagation();
-            const targetId = btn.getAttribute('data-id');
-            const targetName = btn.getAttribute('data-name');
-            startCall(targetId, targetName);
+            startCall(btn.dataset.id, btn.dataset.name);
         };
     });
 });
@@ -152,16 +203,15 @@ socket.on('messages', (msgs) => {
         <div class="message ${msg.isAdmin ? 'admin' : ''}" data-id="${msg.id}">
             <div class="message-header">
                 <strong>${msg.userName}</strong> • ${msg.time}
-                ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${msg.id}" style="float:right; background:none; border:none; color:red;">🗑️</button>` : ''}
+                ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${msg.id}">🗑️</button>` : ''}
             </div>
             <div class="message-text">${escapeHtml(msg.text)}</div>
         </div>
     `).join('');
     
     document.querySelectorAll('.delete-msg').forEach(btn => {
-        btn.onclick = () => socket.emit('delete_message', parseInt(btn.getAttribute('data-id')));
+        btn.onclick = () => socket.emit('delete_message', parseInt(btn.dataset.id));
     });
-    
     container.scrollTop = container.scrollHeight;
 });
 
@@ -172,7 +222,7 @@ socket.on('new_message', (msg) => {
         <div class="message ${msg.isAdmin ? 'admin' : ''}" data-id="${msg.id}">
             <div class="message-header">
                 <strong>${msg.userName}</strong> • ${msg.time}
-                ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${msg.id}" style="float:right;">🗑️</button>` : ''}
+                ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${msg.id}">🗑️</button>` : ''}
             </div>
             <div class="message-text">${escapeHtml(msg.text)}</div>
         </div>
@@ -180,7 +230,6 @@ socket.on('new_message', (msg) => {
     container.scrollTop = container.scrollHeight;
 });
 
-// Отправка сообщения
 document.getElementById('sendBtn').onclick = () => {
     const input = document.getElementById('messageInput');
     if (input.value.trim()) {
@@ -204,13 +253,13 @@ function startCall(targetId, targetName) {
 
 socket.on('incoming_call', (data) => {
     playNotificationSound();
-    document.getElementById('callerName').innerHTML = `${data.fromName}${data.isAdmin ? '[админ]' : ''}`;
+    document.getElementById('callerName').innerHTML = data.fromName;
     document.getElementById('incomingCall').classList.remove('hidden');
     pendingCall = { fromId: data.from, fromName: data.fromName };
 });
 
 document.getElementById('acceptCallBtn').onclick = async () => {
-    if (pendingCall && pendingCall.fromId) {
+    if (pendingCall?.fromId) {
         socket.emit('accept_call', { fromId: pendingCall.fromId });
         await initWebRTC(pendingCall.fromId, true);
         document.getElementById('incomingCall').classList.add('hidden');
@@ -220,7 +269,7 @@ document.getElementById('acceptCallBtn').onclick = async () => {
 };
 
 document.getElementById('rejectCallBtn').onclick = () => {
-    if (pendingCall && pendingCall.fromId) {
+    if (pendingCall?.fromId) {
         socket.emit('reject_call', { fromId: pendingCall.fromId });
         document.getElementById('incomingCall').classList.add('hidden');
         pendingCall = null;
@@ -317,12 +366,3 @@ function escapeHtml(str) {
         return m;
     });
 }
-
-// Автообновление каждую секунду (проверка статуса)
-setInterval(() => {
-    if (currentUser) {
-        fetch('/me').then(res => res.json()).then(data => {
-            if (!data.user) location.reload();
-        });
-    }
-}, 1000);
