@@ -86,6 +86,7 @@ function initApp() {
     socket.auth = { userId: currentUser.id };
     socket.connect();
     loadAdminUsers();
+    loadFriends();
 }
 
 // Проверка авторизации
@@ -127,7 +128,74 @@ document.getElementById('saveSettings').onclick = async () => {
     } else alert(data.error);
 };
 
-// Админ-панель
+// ============ ПОИСК ДРУЗЕЙ ============
+document.getElementById('searchBtn').onclick = async () => {
+    const query = document.getElementById('searchInput').value.trim();
+    if (query.length < 2) return;
+    
+    const res = await fetch('/api/search-users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+    });
+    const data = await res.json();
+    const resultsDiv = document.getElementById('searchResults');
+    
+    if (data.users.length === 0) {
+        resultsDiv.innerHTML = '<div class="empty-message">😔 Никого не найдено</div>';
+        resultsDiv.classList.remove('hidden');
+        return;
+    }
+    
+    resultsDiv.innerHTML = data.users.map(u => `
+        <div class="search-result-item">
+            <span>${u.avatar || '👤'} ${u.name} (${u.id}) ${u.online ? '🟢' : '⚫'}</span>
+            <button class="add-friend-btn" data-id="${u.id}">➕ Добавить</button>
+        </div>
+    `).join('');
+    resultsDiv.classList.remove('hidden');
+    
+    document.querySelectorAll('.add-friend-btn').forEach(btn => {
+        btn.onclick = async () => {
+            const res = await fetch('/api/add-friend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ friendId: btn.dataset.id })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('✅ Друг добавлен!');
+                loadFriends();
+            } else alert(data.error);
+        };
+    });
+};
+
+// ============ ЗАГРУЗКА ДРУЗЕЙ ============
+async function loadFriends() {
+    const res = await fetch('/api/friends');
+    const data = await res.json();
+    const container = document.getElementById('friendsList');
+    document.getElementById('friendsCount').innerText = data.friends.length;
+    
+    if (data.friends.length === 0) {
+        container.innerHTML = '<div class="empty-message">👋 Добавь друзей через поиск</div>';
+        return;
+    }
+    
+    container.innerHTML = data.friends.map(f => `
+        <div class="friend-item">
+            <span class="name">${f.avatar || '👤'} ${f.name} ${f.online ? '<span class="online-dot"></span>' : '⚫'}</span>
+            <button class="friend-call-btn" data-id="${f.id}" data-name="${f.name}">📞 Позвонить</button>
+        </div>
+    `).join('');
+    
+    document.querySelectorAll('.friend-call-btn').forEach(btn => {
+        btn.onclick = () => startCall(btn.dataset.id, btn.dataset.name);
+    });
+}
+
+// ============ АДМИН-ПАНЕЛЬ ============
 async function loadAdminUsers() {
     if (!currentUser?.isAdmin) return;
     const res = await fetch('/api/admin/users');
@@ -150,6 +218,7 @@ async function loadAdminUsers() {
                     body: JSON.stringify({ targetId: btn.dataset.id })
                 });
                 loadAdminUsers();
+                loadFriends();
             };
         });
         document.querySelectorAll('.unban-btn').forEach(btn => {
@@ -160,12 +229,13 @@ async function loadAdminUsers() {
                     body: JSON.stringify({ targetId: btn.dataset.id })
                 });
                 loadAdminUsers();
+                loadFriends();
             };
         });
     }
 }
 
-// Звук уведомлений
+// ============ ЗВУК ============
 function playSound() {
     if (!soundEnabled) return;
     try {
@@ -186,27 +256,12 @@ document.getElementById('soundToggle').onclick = () => {
     document.getElementById('soundToggle').innerHTML = soundEnabled ? '🔊' : '🔇';
 };
 
-// Socket события
+// ============ SOCKET СОБЫТИЯ ============
 socket.on('connect', () => console.log('connected'));
 socket.on('force_logout', () => { alert('⛔ Вы забанены'); location.reload(); });
 
 socket.on('users_update', (users) => {
-    const container = document.getElementById('usersList');
-    const onlineUsers = users.filter(u => u.online && u.id !== currentUser?.id);
-    document.getElementById('onlineCount').innerText = onlineUsers.length;
-    if (onlineUsers.length === 0) {
-        container.innerHTML = '<div class="empty">👻 Никого нет в сети</div>';
-        return;
-    }
-    container.innerHTML = onlineUsers.map(u => `
-        <div class="user-item">
-            <span class="name">${u.displayName}</span>
-            <button class="call-btn" data-id="${u.id}" data-name="${u.name}">📞</button>
-        </div>
-    `).join('');
-    document.querySelectorAll('.call-btn').forEach(btn => {
-        btn.onclick = () => startCall(btn.dataset.id, btn.dataset.name);
-    });
+    loadFriends();
 });
 
 socket.on('user_typing', (data) => {
@@ -219,7 +274,10 @@ socket.on('user_typing', (data) => {
 
 socket.on('messages_history', (msgs) => {
     const container = document.getElementById('messages');
-    if (!msgs.length) return;
+    if (!msgs.length) {
+        container.innerHTML = '<div class="empty-message">💬 Напиши первое сообщение!</div>';
+        return;
+    }
     container.innerHTML = msgs.map(m => `
         <div class="message ${m.isAdmin ? 'admin' : ''}">
             <div class="message-header">
