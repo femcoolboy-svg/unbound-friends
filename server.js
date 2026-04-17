@@ -13,10 +13,9 @@ app.use(express.json());
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
-// Создаём папку для загрузок
 if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
 
-// Настройка загрузки файлов
+// Хранилище для аватарок
 const storage = multer.diskStorage({
     destination: './uploads/',
     filename: (req, file, cb) => {
@@ -26,7 +25,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
-// Получение реального IP
+// Получение IP
 app.set('trust proxy', true);
 function getClientIp(req) {
     return req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
@@ -40,11 +39,11 @@ let users = [
         name: 'prisanok',
         isAdmin: true,
         online: false,
-        avatar: '/uploads/default-avatar.png',
-        avatarType: 'image',
+        avatar: '/uploads/default.png',
         socketId: null,
         isBanned: false,
-        allowedIp: '62.140.249.69'
+        allowedIp: '62.140.249.69',
+        friends: []
     }
 ];
 
@@ -56,13 +55,13 @@ const DATA_FILE = './data.json';
 
 function saveData() {
     try {
-        const dataToSave = {
+        const toSave = {
             users: users.map(u => ({ ...u, socketId: undefined })),
             messages,
             bannedUsers
         };
-        fs.writeFileSync(DATA_FILE, JSON.stringify(dataToSave, null, 2));
-    } catch(e) { console.log('Save error:', e); }
+        fs.writeFileSync(DATA_FILE, JSON.stringify(toSave, null, 2));
+    } catch(e) { console.log('Save error'); }
 }
 
 function loadData() {
@@ -72,134 +71,96 @@ function loadData() {
             users = data.users.map(u => ({ ...u, online: false, socketId: null }));
             messages = data.messages || [];
             bannedUsers = data.bannedUsers || [];
-            
-            const admin = users.find(u => u.id === 'prisanok');
-            if (!admin) {
+            // Убедимся, что админ есть
+            if (!users.find(u => u.id === 'prisanok')) {
                 users.unshift({
-                    id: 'prisanok',
-                    password: 'prisanok',
-                    name: 'prisanok',
-                    isAdmin: true,
-                    online: false,
-                    avatar: '/uploads/default-avatar.png',
-                    avatarType: 'image',
-                    socketId: null,
-                    isBanned: false,
-                    allowedIp: '62.140.249.69'
+                    id: 'prisanok', password: 'prisanok', name: 'prisanok',
+                    isAdmin: true, online: false, avatar: '/uploads/default.png',
+                    socketId: null, isBanned: false, allowedIp: '62.140.249.69', friends: []
                 });
             } else {
+                const admin = users.find(u => u.id === 'prisanok');
                 admin.isAdmin = true;
                 admin.allowedIp = '62.140.249.69';
-                if (!admin.avatar) admin.avatar = '/uploads/default-avatar.png';
+                if (!admin.avatar) admin.avatar = '/uploads/default.png';
             }
         }
-    } catch(e) { console.log('Load error:', e); }
+    } catch(e) { console.log('Load error'); }
 }
-
 loadData();
 setInterval(saveData, 5000);
 
-// ============ ЗАГРУЗКА АВАТАРКИ ============
-app.post('/api/upload-avatar', upload.single('avatar'), (req, res) => {
-    const userId = req.cookies.userId;
-    const user = users.find(u => u.id === userId);
-    
-    if (!user) return res.json({ error: 'Пользователь не найден' });
-    if (!req.file) return res.json({ error: 'Файл не загружен' });
-    
-    user.avatar = '/uploads/' + req.file.filename;
-    user.avatarType = 'image';
-    saveData();
-    
-    res.json({ success: true, avatar: user.avatar });
-});
-
 // ============ КАПЧА ============
-function generateCaptcha() {
-    return Math.floor(Math.random() * 199) + 1;
-}
-
+let captchaStore = {};
 app.post('/api/get-captcha', (req, res) => {
-    const captchaValue = generateCaptcha();
-    if (!global.captchaStore) global.captchaStore = {};
-    global.captchaStore[req.ip] = captchaValue;
-    setTimeout(() => delete global.captchaStore[req.ip], 300000);
-    res.json({ captcha: captchaValue });
+    const captcha = Math.floor(Math.random() * 199) + 1;
+    captchaStore[req.ip] = captcha;
+    setTimeout(() => delete captchaStore[req.ip], 300000);
+    res.json({ captcha });
 });
 
-function isNameTaken(name, excludeUserId = null) {
-    return users.some(u => u.name.toLowerCase() === name.toLowerCase() && u.id !== excludeUserId);
+function isNameTaken(name, excludeId = null) {
+    return users.some(u => u.name.toLowerCase() === name.toLowerCase() && u.id !== excludeId);
 }
 
 // ============ API ============
 app.post('/api/register', (req, res) => {
     const { id, password, name, captchaInput } = req.body;
-    const clientIp = getClientIp(req);
-    
-    const storedCaptcha = global.captchaStore?.[req.ip];
-    if (!storedCaptcha || parseInt(captchaInput) !== storedCaptcha) {
-        return res.json({ error: 'Неверная капча' });
-    }
-    delete global.captchaStore[req.ip];
-    
-    if (!id || id.trim().length < 3) return res.json({ error: 'ID от 3 символов' });
+    const stored = captchaStore[req.ip];
+    if (!stored || parseInt(captchaInput) !== stored) return res.json({ error: 'Неверная капча' });
+    delete captchaStore[req.ip];
+    if (!id || id.length < 3) return res.json({ error: 'ID от 3 символов' });
     if (!password || password.length < 4) return res.json({ error: 'Пароль от 4 символов' });
-    if (!name || name.trim().length < 1) return res.json({ error: 'Введите имя' });
+    if (!name) return res.json({ error: 'Введите имя' });
     if (users.find(u => u.id === id)) return res.json({ error: 'ID уже существует' });
-    if (isNameTaken(name)) return res.json({ error: 'Это имя уже занято' });
-    if (bannedUsers.includes(id)) return res.json({ error: 'Этот ID в бане' });
+    if (isNameTaken(name)) return res.json({ error: 'Имя уже занято' });
+    if (bannedUsers.includes(id)) return res.json({ error: 'ID в бане' });
     
     const newUser = {
-        id: id.trim(),
-        password: password,
-        name: name.trim(),
-        isAdmin: false,
-        online: false,
-        avatar: '/uploads/default-avatar.png',
-        avatarType: 'image',
-        socketId: null,
-        isBanned: false,
-        registeredIp: clientIp
+        id, password, name, isAdmin: false, online: false,
+        avatar: '/uploads/default.png', socketId: null, isBanned: false, friends: []
     };
     users.push(newUser);
-    
-    res.cookie('userId', newUser.id, { maxAge: 30 * 24 * 60 * 60 * 1000, httpOnly: true, path: '/' });
-    res.json({ success: true, user: { id: newUser.id, name: newUser.name, isAdmin: newUser.isAdmin, avatar: newUser.avatar } });
+    res.cookie('userId', id, { maxAge: 30*24*60*60*1000, httpOnly: true });
+    res.json({ success: true, user: { id, name, isAdmin: false, avatar: '/uploads/default.png' } });
     saveData();
 });
 
 app.post('/api/login', (req, res) => {
     const { id, password } = req.body;
-    const clientIp = getClientIp(req);
-    
-    if (!id || !password) return res.json({ error: 'Заполните все поля' });
-    
     const user = users.find(u => u.id === id);
     if (!user || user.password !== password) return res.json({ error: 'Неверный ID или пароль' });
-    
-    if (user.isAdmin && user.allowedIp && clientIp !== user.allowedIp) {
-        return res.json({ error: 'Доступ запрещён. Неверный IP.' });
+    if (user.isAdmin && user.allowedIp && getClientIp(req) !== user.allowedIp) {
+        return res.json({ error: 'Доступ запрещён (IP)' });
     }
-    
     if (user.isBanned || bannedUsers.includes(user.id)) return res.json({ error: 'Вы забанены' });
-    
-    res.cookie('userId', user.id, { maxAge: 30 * 24 * 60 * 60 * 1000, httpOnly: true, path: '/' });
+    res.cookie('userId', id, { maxAge: 30*24*60*60*1000, httpOnly: true });
     res.json({ success: true, user: { id: user.id, name: user.name, isAdmin: user.isAdmin, avatar: user.avatar } });
+});
+
+app.post('/api/upload-avatar', upload.single('avatar'), (req, res) => {
+    const userId = req.cookies.userId;
+    const user = users.find(u => u.id === userId);
+    if (!user) return res.json({ error: 'Нет пользователя' });
+    if (req.file) {
+        user.avatar = '/uploads/' + req.file.filename;
+        saveData();
+        res.json({ success: true, avatar: user.avatar });
+    } else {
+        res.json({ error: 'Файл не загружен' });
+    }
 });
 
 app.post('/api/update-profile', (req, res) => {
     const userId = req.cookies.userId;
-    const { name, password } = req.body;
     const user = users.find(u => u.id === userId);
-    
-    if (!user) return res.json({ error: 'Пользователь не найден' });
+    if (!user) return res.json({ error: 'Не найден' });
+    const { name, password } = req.body;
     if (name && name.trim() && name !== user.name && isNameTaken(name, userId)) {
-        return res.json({ error: 'Это имя уже занято' });
+        return res.json({ error: 'Имя занято' });
     }
-    
     if (name && name.trim()) user.name = name.trim();
     if (password && password.trim().length >= 4) user.password = password;
-    
     saveData();
     res.json({ success: true, user: { id: user.id, name: user.name, isAdmin: user.isAdmin, avatar: user.avatar } });
 });
@@ -207,23 +168,10 @@ app.post('/api/update-profile', (req, res) => {
 app.post('/api/search-users', (req, res) => {
     const { query } = req.body;
     const userId = req.cookies.userId;
-    const currentUser = users.find(u => u.id === userId);
-    
     if (!query || query.length < 2) return res.json({ users: [] });
-    
-    const results = users
-        .filter(u => u.id !== userId && !u.isBanned && !bannedUsers.includes(u.id))
+    const results = users.filter(u => u.id !== userId && !u.isBanned && !bannedUsers.includes(u.id))
         .filter(u => u.name.toLowerCase().includes(query.toLowerCase()) || u.id.toLowerCase().includes(query.toLowerCase()))
-        .map(u => ({
-            id: u.id,
-            name: u.name,
-            isAdmin: u.isAdmin,
-            online: u.online,
-            avatar: u.avatar,
-            isFriend: currentUser?.friends?.includes(u.id) || false
-        }))
-        .slice(0, 20);
-    
+        .map(u => ({ id: u.id, name: u.name, isAdmin: u.isAdmin, online: u.online, avatar: u.avatar }));
     res.json({ users: results });
 });
 
@@ -231,13 +179,9 @@ app.post('/api/add-friend', (req, res) => {
     const userId = req.cookies.userId;
     const { friendId } = req.body;
     const user = users.find(u => u.id === userId);
-    const friend = users.find(u => u.id === friendId);
-    
-    if (!user || !friend) return res.json({ error: 'Пользователь не найден' });
-    if (user.id === friendId) return res.json({ error: 'Нельзя добавить себя' });
+    if (!user) return res.json({ error: 'Ошибка' });
     if (!user.friends) user.friends = [];
-    if (user.friends.includes(friendId)) return res.json({ error: 'Уже в друзьях' });
-    
+    if (user.friends.includes(friendId)) return res.json({ error: 'Уже друг' });
     user.friends.push(friendId);
     saveData();
     res.json({ success: true });
@@ -247,18 +191,10 @@ app.get('/api/friends', (req, res) => {
     const userId = req.cookies.userId;
     const user = users.find(u => u.id === userId);
     if (!user || !user.friends) return res.json({ friends: [] });
-    
     const friendsList = user.friends.map(fid => {
-        const friend = users.find(u => u.id === fid);
-        return friend ? {
-            id: friend.id,
-            name: friend.name,
-            isAdmin: friend.isAdmin,
-            online: friend.online,
-            avatar: friend.avatar
-        } : null;
+        const f = users.find(u => u.id === fid);
+        return f ? { id: f.id, name: f.name, isAdmin: f.isAdmin, online: f.online, avatar: f.avatar } : null;
     }).filter(f => f);
-    
     res.json({ friends: friendsList });
 });
 
@@ -266,30 +202,23 @@ app.post('/api/admin/ban', (req, res) => {
     const userId = req.cookies.userId;
     const admin = users.find(u => u.id === userId);
     if (!admin || !admin.isAdmin) return res.json({ error: 'Нет прав' });
-    
     const { targetId } = req.body;
     if (targetId === 'prisanok') return res.json({ error: 'Нельзя забанить админа' });
-    
     const target = users.find(u => u.id === targetId);
     if (target) {
         target.isBanned = true;
         if (!bannedUsers.includes(targetId)) bannedUsers.push(targetId);
-        if (target.socketId) {
-            io.to(target.socketId).emit('force_logout', { reason: 'Вы забанены' });
-        }
+        if (target.socketId) io.to(target.socketId).emit('force_logout');
         saveData();
         broadcastUsers();
         res.json({ success: true });
-    } else {
-        res.json({ error: 'Пользователь не найден' });
-    }
+    } else res.json({ error: 'Не найден' });
 });
 
 app.post('/api/admin/unban', (req, res) => {
     const userId = req.cookies.userId;
     const admin = users.find(u => u.id === userId);
     if (!admin || !admin.isAdmin) return res.json({ error: 'Нет прав' });
-    
     const { targetId } = req.body;
     const target = users.find(u => u.id === targetId);
     if (target) {
@@ -298,24 +227,17 @@ app.post('/api/admin/unban', (req, res) => {
         saveData();
         broadcastUsers();
         res.json({ success: true });
-    } else {
-        res.json({ error: 'Пользователь не найден' });
-    }
+    } else res.json({ error: 'Не найден' });
 });
 
 app.get('/api/admin/users', (req, res) => {
     const userId = req.cookies.userId;
     const admin = users.find(u => u.id === userId);
     if (!admin || !admin.isAdmin) return res.json({ error: 'Нет прав' });
-    
-    const userList = users.filter(u => u.id !== 'prisanok').map(u => ({
-        id: u.id,
-        name: u.name,
-        isBanned: u.isBanned || bannedUsers.includes(u.id),
-        online: u.online,
-        ip: u.registeredIp || 'неизвестно'
+    const list = users.filter(u => u.id !== 'prisanok').map(u => ({
+        id: u.id, name: u.name, isBanned: u.isBanned || bannedUsers.includes(u.id), online: u.online
     }));
-    res.json({ users: userList });
+    res.json({ users: list });
 });
 
 app.get('/api/me', (req, res) => {
@@ -324,14 +246,10 @@ app.get('/api/me', (req, res) => {
     const user = users.find(u => u.id === userId);
     if (user && (user.isBanned || bannedUsers.includes(user.id))) {
         res.clearCookie('userId');
-        return res.json({ user: null, banned: true });
+        return res.json({ user: null });
     }
-    if (user) {
-        res.json({ user: { id: user.id, name: user.name, isAdmin: user.isAdmin, avatar: user.avatar } });
-    } else {
-        res.clearCookie('userId');
-        res.json({ user: null });
-    }
+    if (user) res.json({ user: { id: user.id, name: user.name, isAdmin: user.isAdmin, avatar: user.avatar } });
+    else res.json({ user: null });
 });
 
 app.get('/api/logout', (req, res) => {
@@ -344,25 +262,27 @@ io.use((socket, next) => {
     const userId = socket.handshake.auth.userId;
     if (userId) {
         const user = users.find(u => u.id === userId);
-        if (user && (user.isBanned || bannedUsers.includes(user.id))) {
-            return next(new Error('Banned'));
-        }
+        if (user && (user.isBanned || bannedUsers.includes(user.id))) return next(new Error('Banned'));
         socket.userId = userId;
         next();
-    } else {
-        next(new Error('Unauthorized'));
-    }
+    } else next(new Error('Unauthorized'));
 });
+
+function broadcastUsers() {
+    const list = users.filter(u => !u.isBanned && !bannedUsers.includes(u.id)).map(u => ({
+        id: u.id, name: u.name, isAdmin: u.isAdmin, online: u.online, avatar: u.avatar,
+        displayName: u.isAdmin ? `${u.name}[АДМИН]` : u.name
+    }));
+    io.emit('users_update', list);
+}
 
 io.on('connection', (socket) => {
     const userId = socket.userId;
-    let currentUser = users.find(u => u.id === userId);
-    
+    const currentUser = users.find(u => u.id === userId);
     if (!currentUser || currentUser.isBanned || bannedUsers.includes(currentUser.id)) {
         socket.disconnect();
         return;
     }
-    
     currentUser.online = true;
     currentUser.socketId = socket.id;
     
@@ -379,7 +299,7 @@ io.on('connection', (socket) => {
     
     socket.on('send_message', (data) => {
         if (!data.text || !data.text.trim()) return;
-        const message = {
+        const msg = {
             id: Date.now(),
             userId: currentUser.id,
             userName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name,
@@ -387,15 +307,15 @@ io.on('connection', (socket) => {
             time: new Date().toLocaleTimeString(),
             isAdmin: currentUser.isAdmin
         };
-        messages.push(message);
+        messages.push(msg);
         if (messages.length > 500) messages.shift();
-        io.emit('new_message', message);
+        io.emit('new_message', msg);
         saveData();
     });
     
-    socket.on('delete_message', (messageId) => {
+    socket.on('delete_message', (msgId) => {
         if (currentUser.isAdmin) {
-            messages = messages.filter(m => m.id !== messageId);
+            messages = messages.filter(m => m.id !== msgId);
             io.emit('messages_update', messages);
             saveData();
         }
@@ -403,39 +323,34 @@ io.on('connection', (socket) => {
     
     // ЗВОНКИ
     socket.on('call_user', (data) => {
-        const targetUser = users.find(u => u.id === data.targetId);
-        if (!targetUser || !targetUser.online || !targetUser.socketId) {
+        const target = users.find(u => u.id === data.targetId);
+        if (!target || !target.online || !target.socketId) {
             socket.emit('call_error', 'Пользователь не в сети');
             return;
         }
-        const existingCall = activeCalls.find(c => c.to === targetUser.id || c.from === targetUser.id);
-        if (existingCall) {
-            socket.emit('call_error', 'Пользователь уже в звонке');
+        if (activeCalls.some(c => c.to === target.id || c.from === target.id)) {
+            socket.emit('call_error', 'Уже в звонке');
             return;
         }
         const call = {
             id: Date.now(),
             from: currentUser.id,
             fromName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name,
-            to: targetUser.id,
+            to: target.id,
             fromSocket: socket.id,
-            toSocket: targetUser.socketId
+            toSocket: target.socketId
         };
         activeCalls.push(call);
-        io.to(targetUser.socketId).emit('incoming_call', {
+        io.to(target.socketId).emit('incoming_call', {
             from: currentUser.id,
-            fromName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name,
-            fromAvatar: currentUser.avatar
+            fromName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name
         });
     });
     
     socket.on('accept_call', (data) => {
         const call = activeCalls.find(c => c.from === data.fromId);
         if (call) {
-            io.to(call.fromSocket).emit('call_accepted', { 
-                to: currentUser.id, 
-                toName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name 
-            });
+            io.to(call.fromSocket).emit('call_accepted', { to: currentUser.id, toName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name });
             socket.emit('call_started', { with: call.from });
         }
     });
@@ -464,14 +379,12 @@ io.on('connection', (socket) => {
             io.to(target.socketId).emit('webrtc_offer', { offer: data.offer, from: currentUser.id });
         }
     });
-    
     socket.on('webrtc_answer', (data) => {
         const target = users.find(u => u.id === data.targetId);
         if (target && target.online && target.socketId) {
             io.to(target.socketId).emit('webrtc_answer', { answer: data.answer, from: currentUser.id });
         }
     });
-    
     socket.on('webrtc_ice', (data) => {
         const target = users.find(u => u.id === data.targetId);
         if (target && target.online && target.socketId) {
@@ -489,21 +402,8 @@ io.on('connection', (socket) => {
     });
 });
 
-function broadcastUsers() {
-    const usersList = users.filter(u => !u.isBanned && !bannedUsers.includes(u.id)).map(u => ({
-        id: u.id,
-        name: u.name,
-        isAdmin: u.isAdmin,
-        online: u.online,
-        avatar: u.avatar,
-        displayName: u.isAdmin ? `${u.name}[АДМИН]` : u.name
-    }));
-    io.emit('users_update', usersList);
-}
-
 const PORT = 3000;
 server.listen(PORT, () => {
-    console.log(`\n🚀 UNBOUND сервер запущен на http://localhost:${PORT}`);
-    console.log(`👑 Админ: prisanok / prisanok`);
-    console.log(`🔒 IP-защита админа: 62.140.249.69\n`);
+    console.log(`\n✅ UNBOUND сервер запущен на http://localhost:${PORT}`);
+    console.log(`👑 Админ: prisanok / prisanok (только с IP 62.140.249.69)\n`);
 });
