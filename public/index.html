@@ -3,27 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UNBOUND | Друзья + Звонки + Админ</title>
+    <title>UNBOUND | Друзья + Звонки</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <div class="app" id="app">
-        <!-- АВТОРИЗАЦИЯ -->
+        <!-- АВТОРИЗАЦИЯ С ДВУМЯ ВКЛАДКАМИ -->
         <div id="authScreen" class="auth-screen">
             <div class="auth-card">
                 <h1>✨ UNBOUND ✨</h1>
-                <p>Общайся, звони, будь в центре событий</p>
-                <div class="input-group">
-                    <input type="text" id="loginId" placeholder="ID (например: prisanok)" autocomplete="off">
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="login">🔐 Вход</button>
+                    <button class="tab-btn" data-tab="register">📝 Регистрация</button>
                 </div>
-                <div class="input-group">
-                    <input type="password" id="loginPassword" placeholder="Пароль">
+                
+                <!-- Форма входа -->
+                <div id="loginTab" class="tab-content active">
+                    <div class="input-group">
+                        <input type="text" id="loginId" placeholder="ID" autocomplete="off">
+                    </div>
+                    <div class="input-group">
+                        <input type="password" id="loginPassword" placeholder="Пароль">
+                    </div>
+                    <button id="loginBtn" class="btn-primary">🔓 Войти</button>
                 </div>
-                <div class="input-group">
-                    <input type="text" id="loginName" placeholder="Имя (при регистрации)">
+                
+                <!-- Форма регистрации -->
+                <div id="registerTab" class="tab-content hidden">
+                    <div class="input-group">
+                        <input type="text" id="regId" placeholder="ID (от 3 символов)" autocomplete="off">
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="regName" placeholder="Имя">
+                    </div>
+                    <div class="input-group">
+                        <input type="password" id="regPassword" placeholder="Пароль (от 4 символов)">
+                    </div>
+                    <button id="registerBtn" class="btn-primary">✨ Зарегистрироваться</button>
                 </div>
-                <button id="authBtn" class="btn-primary">🚀 Войти / Зарегистрироваться</button>
-                <p class="hint">⭐ Админ: prisanok / prisanok</p>
+                
+                <div id="authError" class="error-msg hidden"></div>
             </div>
         </div>
 
@@ -36,8 +55,8 @@
                         <span id="userNameDisplay"></span>
                         <span id="userBadge"></span>
                     </div>
-                    <button id="settingsBtn" class="icon-btn">⚙️</button>
-                    <button id="logoutBtn" class="icon-btn">🚪</button>
+                    <button id="settingsBtn" class="icon-btn" title="Настройки">⚙️</button>
+                    <button id="logoutBtn" class="icon-btn" title="Выйти">🚪</button>
                 </div>
                 
                 <div class="users-list">
@@ -49,11 +68,11 @@
             <div class="chat-area">
                 <div class="chat-header">
                     <h2>💬 Общий чат</h2>
-                    <span id="notificationSound">🔔 Звук включён</span>
+                    <button id="toggleSoundBtn" class="sound-btn">🔊</button>
                 </div>
                 <div class="messages-container" id="messagesContainer"></div>
                 <div class="message-input">
-                    <input type="text" id="messageInput" placeholder="Напиши сообщение...">
+                    <input type="text" id="messageInput" placeholder="Напиши сообщение..." maxlength="500">
                     <button id="sendBtn" class="btn-primary">📤 Отправить</button>
                 </div>
             </div>
@@ -62,35 +81,44 @@
                 <h3>📞 Звонки</h3>
                 <div id="activeCallInfo" class="call-info hidden">
                     <div id="callStatus"></div>
-                    <button id="hangupCallBtn" class="btn-danger">🔴 Завершить звонок</button>
+                    <button id="hangupCallBtn" class="btn-danger">🔴 Завершить</button>
                 </div>
                 <div id="incomingCall" class="incoming-call hidden">
                     <p>📞 Входящий звонок от <span id="callerName"></span></p>
-                    <button id="acceptCallBtn" class="btn-success">✅ Принять</button>
-                    <button id="rejectCallBtn" class="btn-danger">❌ Отклонить</button>
+                    <div class="call-buttons">
+                        <button id="acceptCallBtn" class="btn-success">✅ Принять</button>
+                        <button id="rejectCallBtn" class="btn-danger">❌ Отклонить</button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Настройки профиля -->
+    <!-- МОДАЛЬНОЕ ОКНО НАСТРОЕК (СОВРЕМЕННЫЙ ДИЗАЙН) -->
     <div id="settingsModal" class="modal hidden">
         <div class="modal-content">
-            <h2>⚙️ Настройки профиля</h2>
-            <div class="input-group">
-                <label>Имя</label>
-                <input type="text" id="settingsName" placeholder="Новое имя">
+            <div class="modal-header">
+                <h2>⚙️ Настройки профиля</h2>
+                <button id="closeSettingsBtn" class="close-btn">✖</button>
             </div>
-            <div class="input-group">
-                <label>Аватар (эмодзи)</label>
-                <input type="text" id="settingsAvatar" placeholder="😀" maxlength="2">
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>👤 Имя</label>
+                    <input type="text" id="settingsName" placeholder="Новое имя">
+                </div>
+                <div class="input-group">
+                    <label>😀 Аватар (эмодзи)</label>
+                    <input type="text" id="settingsAvatar" placeholder="😀" maxlength="2">
+                </div>
+                <div class="input-group">
+                    <label>🔒 Новый пароль</label>
+                    <input type="password" id="settingsPassword" placeholder="Оставь пустым чтобы не менять">
+                </div>
             </div>
-            <div class="input-group">
-                <label>Новый пароль</label>
-                <input type="password" id="settingsPassword" placeholder="Оставь пустым чтобы не менять">
+            <div class="modal-footer">
+                <button id="saveSettingsBtn" class="btn-primary">💾 Сохранить</button>
+                <button id="cancelSettingsBtn" class="btn-secondary">Отмена</button>
             </div>
-            <button id="saveSettingsBtn" class="btn-primary">💾 Сохранить</button>
-            <button id="closeSettingsBtn" class="btn-secondary">Закрыть</button>
         </div>
     </div>
 
