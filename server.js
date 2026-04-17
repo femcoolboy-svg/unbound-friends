@@ -10,12 +10,10 @@ app.use(cookieParser());
 app.use(express.static('public'));
 app.use(express.json());
 
-// База данных в памяти
 let users = [];
 let messages = [];
 let activeCalls = [];
 
-// Предустановленный админ
 const ADMIN_USER = {
     id: 'prisanok',
     password: 'prisanok',
@@ -27,7 +25,6 @@ const ADMIN_USER = {
 
 users.push(ADMIN_USER);
 
-// Сохранение в файл (для персистентности)
 const fs = require('fs');
 const DATA_FILE = './data.json';
 
@@ -40,7 +37,6 @@ function loadData() {
         const data = JSON.parse(fs.readFileSync(DATA_FILE));
         users = data.users;
         messages = data.messages;
-        // Убедимся что админ есть
         if (!users.find(u => u.id === 'prisanok')) {
             users.push(ADMIN_USER);
         }
@@ -50,33 +46,59 @@ function loadData() {
 loadData();
 setInterval(saveData, 5000);
 
-// API для регистрации/логина
-app.post('/auth', (req, res) => {
+app.post('/register', (req, res) => {
     const { id, password, name } = req.body;
-    let user = users.find(u => u.id === id);
     
-    if (user) {
-        if (user.password && user.password !== password) {
-            return res.json({ error: 'Неверный пароль' });
-        }
-    } else {
-        if (users.find(u => u.id === id)) {
-            return res.json({ error: 'ID уже существует' });
-        }
-        user = {
-            id,
-            password,
-            name: name || id,
-            isAdmin: false,
-            online: false,
-            avatar: '👤',
-            friends: []
-        };
-        users.push(user);
+    if (!id || id.trim().length < 3) return res.json({ error: 'ID должен быть от 3 символов' });
+    if (!password || password.length < 4) return res.json({ error: 'Пароль от 4 символов' });
+    if (!name || name.trim().length < 1) return res.json({ error: 'Введите имя' });
+    
+    if (users.find(u => u.id === id)) {
+        return res.json({ error: 'Пользователь с таким ID уже существует' });
+    }
+    
+    const user = {
+        id,
+        password,
+        name: name.trim(),
+        isAdmin: false,
+        online: false,
+        avatar: '👤',
+        friends: []
+    };
+    users.push(user);
+    res.cookie('userId', user.id, { maxAge: 30 * 24 * 60 * 60 * 1000 });
+    res.json({ success: true, user: { id: user.id, name: user.name, isAdmin: user.isAdmin, avatar: user.avatar } });
+});
+
+app.post('/login', (req, res) => {
+    const { id, password } = req.body;
+    
+    if (!id || !password) return res.json({ error: 'Заполните все поля' });
+    
+    const user = users.find(u => u.id === id);
+    if (!user || user.password !== password) {
+        return res.json({ error: 'Неверный ID или пароль' });
     }
     
     res.cookie('userId', user.id, { maxAge: 30 * 24 * 60 * 60 * 1000 });
-    res.json({ success: true, user: { id: user.id, name: user.name, isAdmin: user.isAdmin } });
+    res.json({ success: true, user: { id: user.id, name: user.name, isAdmin: user.isAdmin, avatar: user.avatar } });
+});
+
+app.post('/update_profile', (req, res) => {
+    const userId = req.cookies.userId;
+    const { name, avatar, password } = req.body;
+    const user = users.find(u => u.id === userId);
+    
+    if (user) {
+        if (name && name.trim()) user.name = name.trim();
+        if (avatar && avatar.trim()) user.avatar = avatar.trim().slice(0, 2);
+        if (password && password.trim().length >= 4) user.password = password;
+        saveData();
+        res.json({ success: true, user: { id: user.id, name: user.name, isAdmin: user.isAdmin, avatar: user.avatar } });
+    } else {
+        res.json({ error: 'Пользователь не найден' });
+    }
 });
 
 app.get('/logout', (req, res) => {
@@ -94,7 +116,6 @@ app.get('/me', (req, res) => {
     }
 });
 
-// Socket.IO реальное время
 io.use((socket, next) => {
     const userId = socket.handshake.auth.userId;
     if (userId) {
@@ -113,17 +134,23 @@ io.on('connection', (socket) => {
     currentUser.online = true;
     currentUser.socketId = socket.id;
     
-    // Отправляем историю
     socket.emit('messages', messages);
-    io.emit('users_update', users.map(u => ({ id: u.id, name: u.name, isAdmin: u.isAdmin, online: u.online, avatar: u.avatar })));
+    io.emit('users_update', users.map(u => ({ 
+        id: u.id, 
+        name: u.name, 
+        isAdmin: u.isAdmin, 
+        online: u.online, 
+        avatar: u.avatar,
+        displayName: u.isAdmin ? `${u.name}[админ]` : u.name
+    })));
     
-    // Новое сообщение
     socket.on('send_message', (data) => {
+        if (!data.text || !data.text.trim()) return;
         const msg = {
             id: Date.now(),
             userId: currentUser.id,
             userName: currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name,
-            text: data.text,
+            text: data.text.trim(),
             time: new Date().toLocaleTimeString(),
             isAdmin: currentUser.isAdmin
         };
@@ -133,7 +160,6 @@ io.on('connection', (socket) => {
         saveData();
     });
     
-    // Удаление сообщений (только админ)
     socket.on('delete_message', (msgId) => {
         if (currentUser.isAdmin) {
             messages = messages.filter(m => m.id != msgId);
@@ -142,13 +168,12 @@ io.on('connection', (socket) => {
         }
     });
     
-    // Обработка звонков
     socket.on('call_user', (data) => {
         const targetUser = users.find(u => u.id === data.targetId);
         if (targetUser && targetUser.online) {
             io.to(targetUser.socketId).emit('incoming_call', {
                 from: currentUser.id,
-                fromName: currentUser.name,
+                fromName: currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name,
                 isAdmin: currentUser.isAdmin
             });
             activeCalls.push({ from: currentUser.id, to: data.targetId, fromSocket: socket.id, toSocket: targetUser.socketId });
@@ -160,7 +185,7 @@ io.on('connection', (socket) => {
     socket.on('accept_call', (data) => {
         const call = activeCalls.find(c => c.from === data.fromId);
         if (call) {
-            io.to(call.fromSocket).emit('call_accepted', { to: currentUser.id, toName: currentUser.name });
+            io.to(call.fromSocket).emit('call_accepted', { to: currentUser.id, toName: currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name });
             socket.emit('call_started', { with: call.from });
         }
     });
@@ -182,7 +207,6 @@ io.on('connection', (socket) => {
         }
     });
     
-    // WebRTC сигналинг
     socket.on('webrtc_offer', (data) => {
         const target = users.find(u => u.id === data.targetId);
         if (target && target.online) {
@@ -207,12 +231,18 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         if (currentUser) {
             currentUser.online = false;
-            io.emit('users_update', users.map(u => ({ id: u.id, name: u.name, isAdmin: u.isAdmin, online: u.online, avatar: u.avatar })));
+            io.emit('users_update', users.map(u => ({ 
+                id: u.id, 
+                name: u.name, 
+                isAdmin: u.isAdmin, 
+                online: u.online, 
+                avatar: u.avatar,
+                displayName: u.isAdmin ? `${u.name}[админ]` : u.name
+            })));
         }
     });
 });
 
 server.listen(3000, () => {
     console.log('🚀 UNBOUND сервер запущен на http://localhost:3000');
-    console.log('📱 Админ: prisanok / prisanok');
 });
