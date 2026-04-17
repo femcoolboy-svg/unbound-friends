@@ -71,19 +71,13 @@ body {
 
 /* АВТОРИЗАЦИЯ */
 .auth-card {
-    background: rgba(16, 10, 28, 0.9);
+    background: rgba(16, 10, 28, 0.95);
     backdrop-filter: blur(24px);
     border-radius: 48px;
     padding: 48px;
     width: 460px;
-    border: 1px solid rgba(168, 85, 247, 0.4);
+    border: 1px solid rgba(168, 85, 247, 0.5);
     box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
-    animation: fadeInUp 0.5s ease;
-}
-
-@keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(30px); }
-    to { opacity: 1; transform: translateY(0); }
 }
 
 .logo {
@@ -134,7 +128,6 @@ body {
     color: #d8b4fe;
     cursor: pointer;
     font-weight: 600;
-    font-size: 15px;
     transition: 0.2s;
 }
 
@@ -171,7 +164,6 @@ button {
     cursor: pointer;
     width: 100%;
     font-weight: 600;
-    font-size: 15px;
     transition: 0.2s;
 }
 
@@ -234,7 +226,7 @@ button:hover {
 }
 
 .left-panel, .chat-panel, .calls-panel {
-    background: rgba(16, 10, 28, 0.8);
+    background: rgba(16, 10, 28, 0.85);
     backdrop-filter: blur(8px);
     border-radius: 28px;
     padding: 20px;
@@ -242,7 +234,7 @@ button:hover {
     max-height: calc(100vh - 40px);
 }
 
-/* Профиль */
+/* Профиль с аватаркой */
 .profile {
     display: flex;
     align-items: center;
@@ -252,16 +244,35 @@ button:hover {
     margin-bottom: 20px;
 }
 
-.avatar {
-    width: 60px;
-    height: 60px;
-    background: linear-gradient(135deg, #a855f7, #7c3aed);
+.avatar-container {
+    position: relative;
+    width: 70px;
+    height: 70px;
+}
+
+.avatar-img {
+    width: 70px;
+    height: 70px;
     border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #a855f7;
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+}
+
+.upload-avatar-btn {
+    position: absolute;
+    bottom: -5px;
+    right: -5px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: #7c3aed;
+    border-radius: 50%;
+    font-size: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 32px;
-    box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+    cursor: pointer;
 }
 
 .profile-info {
@@ -278,6 +289,22 @@ button:hover {
     color: #c084fc;
 }
 
+/* Админ красный */
+.admin-badge {
+    background: #ef4444;
+    color: white;
+    padding: 2px 10px;
+    border-radius: 60px;
+    font-size: 10px;
+    font-weight: bold;
+    margin-left: 8px;
+    display: inline-block;
+}
+
+.admin-name {
+    color: #ef4444;
+}
+
 .icon-btn {
     width: 44px;
     height: 44px;
@@ -287,11 +314,7 @@ button:hover {
 }
 
 /* Поиск */
-.search-section {
-    margin-bottom: 24px;
-}
-
-.search-section h3 {
+.search-section h3, .friends-section h3 {
     font-size: 16px;
     margin-bottom: 12px;
     color: #c084fc;
@@ -314,12 +337,12 @@ button:hover {
 
 .search-results {
     margin-top: 12px;
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.5);
     border-radius: 20px;
     padding: 12px;
 }
 
-.search-result-item {
+.search-result-item, .friend-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -327,44 +350,7 @@ button:hover {
     border-bottom: 1px solid rgba(168, 85, 247, 0.2);
 }
 
-.search-result-item:last-child {
-    border-bottom: none;
-}
-
-.add-friend-btn {
-    width: auto;
-    padding: 6px 16px;
-    font-size: 12px;
-}
-
-/* Друзья */
-.friends-section h3 {
-    font-size: 16px;
-    margin-bottom: 12px;
-    color: #c084fc;
-}
-
-.friends-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.friend-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    background: rgba(168, 85, 247, 0.1);
-    border-radius: 60px;
-}
-
-.friend-item .name {
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.friend-call-btn {
+.add-friend-btn, .friend-call-btn {
     width: auto;
     padding: 6px 16px;
     font-size: 12px;
@@ -408,7 +394,7 @@ button:hover {
     font-size: 11px;
 }
 
-/* Чат */
+/* ЧАТ */
 .chat-panel {
     display: flex;
     flex-direction: column;
@@ -453,7 +439,7 @@ button:hover {
 
 .message.admin {
     border-left-color: #ef4444;
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(239, 68, 68, 0.15);
 }
 
 .message-header {
@@ -462,6 +448,11 @@ button:hover {
     margin-bottom: 6px;
     display: flex;
     justify-content: space-between;
+}
+
+.message-header .admin-marker {
+    color: #ef4444;
+    font-weight: bold;
 }
 
 .delete-msg {
@@ -617,11 +608,4 @@ button:hover {
 ::-webkit-scrollbar-thumb {
     background: #a855f7;
     border-radius: 10px;
-}
-
-.empty-message {
-    text-align: center;
-    padding: 40px;
-    color: #a855f7;
-    opacity: 0.5;
 }
