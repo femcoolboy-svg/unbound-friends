@@ -4,12 +4,29 @@ const http = require('http');
 const server = http.createServer(app);
 const io = require('socket.io')(server);
 const cookieParser = require('cookie-parser');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.static('public'));
+app.use('/uploads', express.static('uploads'));
 
-// Получение реального IP клиента
+// Создаём папку для загрузок
+if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
+
+// Настройка загрузки файлов
+const storage = multer.diskStorage({
+    destination: './uploads/',
+    filename: (req, file, cb) => {
+        const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, unique + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// Получение реального IP
 app.set('trust proxy', true);
 function getClientIp(req) {
     return req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
@@ -23,7 +40,8 @@ let users = [
         name: 'prisanok',
         isAdmin: true,
         online: false,
-        avatar: '👑',
+        avatar: '/uploads/default-avatar.png',
+        avatarType: 'image',
         socketId: null,
         isBanned: false,
         allowedIp: '62.140.249.69'
@@ -34,7 +52,6 @@ let messages = [];
 let activeCalls = [];
 let bannedUsers = [];
 
-const fs = require('fs');
 const DATA_FILE = './data.json';
 
 function saveData() {
@@ -64,7 +81,8 @@ function loadData() {
                     name: 'prisanok',
                     isAdmin: true,
                     online: false,
-                    avatar: '👑',
+                    avatar: '/uploads/default-avatar.png',
+                    avatarType: 'image',
                     socketId: null,
                     isBanned: false,
                     allowedIp: '62.140.249.69'
@@ -72,6 +90,7 @@ function loadData() {
             } else {
                 admin.isAdmin = true;
                 admin.allowedIp = '62.140.249.69';
+                if (!admin.avatar) admin.avatar = '/uploads/default-avatar.png';
             }
         }
     } catch(e) { console.log('Load error:', e); }
@@ -79,6 +98,21 @@ function loadData() {
 
 loadData();
 setInterval(saveData, 5000);
+
+// ============ ЗАГРУЗКА АВАТАРКИ ============
+app.post('/api/upload-avatar', upload.single('avatar'), (req, res) => {
+    const userId = req.cookies.userId;
+    const user = users.find(u => u.id === userId);
+    
+    if (!user) return res.json({ error: 'Пользователь не найден' });
+    if (!req.file) return res.json({ error: 'Файл не загружен' });
+    
+    user.avatar = '/uploads/' + req.file.filename;
+    user.avatarType = 'image';
+    saveData();
+    
+    res.json({ success: true, avatar: user.avatar });
+});
 
 // ============ КАПЧА ============
 function generateCaptcha() {
@@ -121,7 +155,8 @@ app.post('/api/register', (req, res) => {
         name: name.trim(),
         isAdmin: false,
         online: false,
-        avatar: '👤',
+        avatar: '/uploads/default-avatar.png',
+        avatarType: 'image',
         socketId: null,
         isBanned: false,
         registeredIp: clientIp
@@ -142,9 +177,8 @@ app.post('/api/login', (req, res) => {
     const user = users.find(u => u.id === id);
     if (!user || user.password !== password) return res.json({ error: 'Неверный ID или пароль' });
     
-    // IP-защита для админа
     if (user.isAdmin && user.allowedIp && clientIp !== user.allowedIp) {
-        return res.json({ error: 'Доступ запрещён. Неверный IP-адрес.' });
+        return res.json({ error: 'Доступ запрещён. Неверный IP.' });
     }
     
     if (user.isBanned || bannedUsers.includes(user.id)) return res.json({ error: 'Вы забанены' });
@@ -155,7 +189,7 @@ app.post('/api/login', (req, res) => {
 
 app.post('/api/update-profile', (req, res) => {
     const userId = req.cookies.userId;
-    const { name, avatar, password } = req.body;
+    const { name, password } = req.body;
     const user = users.find(u => u.id === userId);
     
     if (!user) return res.json({ error: 'Пользователь не найден' });
@@ -164,14 +198,12 @@ app.post('/api/update-profile', (req, res) => {
     }
     
     if (name && name.trim()) user.name = name.trim();
-    if (avatar && avatar.trim()) user.avatar = avatar.trim().slice(0, 2);
     if (password && password.trim().length >= 4) user.password = password;
     
     saveData();
     res.json({ success: true, user: { id: user.id, name: user.name, isAdmin: user.isAdmin, avatar: user.avatar } });
 });
 
-// ПОИСК ПОЛЬЗОВАТЕЛЕЙ ПО НИКУ
 app.post('/api/search-users', (req, res) => {
     const { query } = req.body;
     const userId = req.cookies.userId;
@@ -195,7 +227,6 @@ app.post('/api/search-users', (req, res) => {
     res.json({ users: results });
 });
 
-// ДОБАВЛЕНИЕ В ДРУЗЬЯ
 app.post('/api/add-friend', (req, res) => {
     const userId = req.cookies.userId;
     const { friendId } = req.body;
@@ -212,7 +243,6 @@ app.post('/api/add-friend', (req, res) => {
     res.json({ success: true });
 });
 
-// ПОЛУЧЕНИЕ СПИСКА ДРУЗЕЙ
 app.get('/api/friends', (req, res) => {
     const userId = req.cookies.userId;
     const user = users.find(u => u.id === userId);
@@ -232,7 +262,6 @@ app.get('/api/friends', (req, res) => {
     res.json({ friends: friendsList });
 });
 
-// Админские методы
 app.post('/api/admin/ban', (req, res) => {
     const userId = req.cookies.userId;
     const admin = users.find(u => u.id === userId);
@@ -343,7 +372,7 @@ io.on('connection', (socket) => {
     socket.on('typing', (data) => {
         socket.broadcast.emit('user_typing', {
             userId: currentUser.id,
-            userName: currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name,
+            userName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name,
             isTyping: data.isTyping
         });
     });
@@ -353,7 +382,7 @@ io.on('connection', (socket) => {
         const message = {
             id: Date.now(),
             userId: currentUser.id,
-            userName: currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name,
+            userName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name,
             text: data.text.trim(),
             time: new Date().toLocaleTimeString(),
             isAdmin: currentUser.isAdmin
@@ -372,14 +401,11 @@ io.on('connection', (socket) => {
         }
     });
     
+    // ЗВОНКИ
     socket.on('call_user', (data) => {
         const targetUser = users.find(u => u.id === data.targetId);
         if (!targetUser || !targetUser.online || !targetUser.socketId) {
             socket.emit('call_error', 'Пользователь не в сети');
-            return;
-        }
-        if (targetUser.isBanned || bannedUsers.includes(targetUser.id)) {
-            socket.emit('call_error', 'Пользователь забанен');
             return;
         }
         const existingCall = activeCalls.find(c => c.to === targetUser.id || c.from === targetUser.id);
@@ -390,7 +416,7 @@ io.on('connection', (socket) => {
         const call = {
             id: Date.now(),
             from: currentUser.id,
-            fromName: currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name,
+            fromName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name,
             to: targetUser.id,
             fromSocket: socket.id,
             toSocket: targetUser.socketId
@@ -398,7 +424,7 @@ io.on('connection', (socket) => {
         activeCalls.push(call);
         io.to(targetUser.socketId).emit('incoming_call', {
             from: currentUser.id,
-            fromName: currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name,
+            fromName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name,
             fromAvatar: currentUser.avatar
         });
     });
@@ -406,7 +432,10 @@ io.on('connection', (socket) => {
     socket.on('accept_call', (data) => {
         const call = activeCalls.find(c => c.from === data.fromId);
         if (call) {
-            io.to(call.fromSocket).emit('call_accepted', { to: currentUser.id, toName: currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name });
+            io.to(call.fromSocket).emit('call_accepted', { 
+                to: currentUser.id, 
+                toName: currentUser.isAdmin ? `${currentUser.name}[АДМИН]` : currentUser.name 
+            });
             socket.emit('call_started', { with: call.from });
         }
     });
@@ -428,6 +457,7 @@ io.on('connection', (socket) => {
         }
     });
     
+    // WebRTC сигналинг
     socket.on('webrtc_offer', (data) => {
         const target = users.find(u => u.id === data.targetId);
         if (target && target.online && target.socketId) {
@@ -466,7 +496,7 @@ function broadcastUsers() {
         isAdmin: u.isAdmin,
         online: u.online,
         avatar: u.avatar,
-        displayName: u.isAdmin ? `${u.name}[админ]` : u.name
+        displayName: u.isAdmin ? `${u.name}[АДМИН]` : u.name
     }));
     io.emit('users_update', usersList);
 }
