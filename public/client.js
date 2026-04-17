@@ -7,6 +7,7 @@ let localStream = null;
 let peerConnection = null;
 let currentCallWith = null;
 let soundEnabled = true;
+let pendingCall = null;
 
 function getCookie(name) {
     const value = `; ${document.cookie}`;
@@ -39,7 +40,7 @@ document.getElementById('loginBtn').onclick = async () => {
         return;
     }
     
-    const res = await fetch('/login', {
+    const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, password })
@@ -72,7 +73,7 @@ document.getElementById('registerBtn').onclick = async () => {
         return;
     }
     
-    const res = await fetch('/register', {
+    const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, password, name })
@@ -109,7 +110,8 @@ function initApp() {
     socket.connect();
 }
 
-fetch('/me').then(res => res.json()).then(data => {
+// Проверка авторизации
+fetch('/api/me').then(res => res.json()).then(data => {
     if (data.user) {
         currentUser = data.user;
         initApp();
@@ -117,8 +119,9 @@ fetch('/me').then(res => res.json()).then(data => {
     }
 });
 
+// Выход
 document.getElementById('logoutBtn').onclick = async () => {
-    await fetch('/logout');
+    await fetch('/api/logout');
     document.cookie = 'userId=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
     location.reload();
 };
@@ -142,7 +145,7 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
     const newAvatar = document.getElementById('settingsAvatar').value.trim();
     const newPassword = document.getElementById('settingsPassword').value;
     
-    const res = await fetch('/update_profile', {
+    const res = await fetch('/api/update-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName, avatar: newAvatar, password: newPassword })
@@ -154,15 +157,18 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
         document.getElementById('userNameDisplay').innerHTML = displayName;
         document.getElementById('userAvatar').innerHTML = currentUser.avatar || '👤';
         document.getElementById('settingsModal').classList.add('hidden');
-        alert('Профиль обновлён');
+        alert('✅ Профиль обновлён');
     }
 };
 
+// Звук уведомлений
 function playNotificationSound() {
     if (!soundEnabled) return;
-    const audio = new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3');
-    audio.volume = 0.2;
-    audio.play().catch(e => console.log('no sound'));
+    try {
+        const audio = new Audio('data:audio/wav;base64,U3RlYWx0aCBzb3VuZA==');
+        audio.volume = 0.3;
+        audio.play().catch(() => {});
+    } catch(e) {}
 }
 
 document.getElementById('toggleSoundBtn').onclick = () => {
@@ -171,25 +177,32 @@ document.getElementById('toggleSoundBtn').onclick = () => {
 };
 
 // Socket события
-socket.on('connect', () => console.log('connected'));
+socket.on('connect', () => console.log('✅ Connected'));
 
 socket.on('users_update', (users) => {
     const container = document.getElementById('usersContainer');
     const onlineUsers = users.filter(u => u.online && u.id !== currentUser?.id);
     document.getElementById('onlineCount').innerText = onlineUsers.length;
     
+    if (onlineUsers.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:20px; opacity:0.5;">👻 Никого нет в сети</div>';
+        return;
+    }
+    
     container.innerHTML = onlineUsers.map(user => `
         <div class="user-item" data-id="${user.id}">
-            <div class="avatar" style="width: 40px; height: 40px; font-size: 22px;">${user.avatar || '👤'}</div>
-            <div style="flex:1">
-                <strong>${user.isAdmin ? `${user.name}[админ]` : user.name}</strong>
-                <span class="online-indicator"></span>
+            <div class="user-item-avatar">${user.avatar || '👤'}</div>
+            <div class="user-item-info">
+                <div class="user-item-name">
+                    ${user.isAdmin ? `${user.name}[админ]` : user.name}
+                    <span class="online-dot"></span>
+                </div>
             </div>
-            <button class="call-user-btn" data-id="${user.id}" data-name="${user.name}">📞</button>
+            <button class="call-btn" data-id="${user.id}" data-name="${user.name}">📞</button>
         </div>
     `).join('');
     
-    document.querySelectorAll('.call-user-btn').forEach(btn => {
+    document.querySelectorAll('.call-btn').forEach(btn => {
         btn.onclick = (e) => {
             e.stopPropagation();
             startCall(btn.dataset.id, btn.dataset.name);
@@ -197,8 +210,9 @@ socket.on('users_update', (users) => {
     });
 });
 
-socket.on('messages', (msgs) => {
+socket.on('messages_history', (msgs) => {
     const container = document.getElementById('messagesContainer');
+    if (!msgs.length) return;
     container.innerHTML = msgs.map(msg => `
         <div class="message ${msg.isAdmin ? 'admin' : ''}" data-id="${msg.id}">
             <div class="message-header">
@@ -208,16 +222,19 @@ socket.on('messages', (msgs) => {
             <div class="message-text">${escapeHtml(msg.text)}</div>
         </div>
     `).join('');
+    container.scrollTop = container.scrollHeight;
     
     document.querySelectorAll('.delete-msg').forEach(btn => {
         btn.onclick = () => socket.emit('delete_message', parseInt(btn.dataset.id));
     });
-    container.scrollTop = container.scrollHeight;
 });
 
 socket.on('new_message', (msg) => {
     playNotificationSound();
     const container = document.getElementById('messagesContainer');
+    const welcome = container.querySelector('.welcome-message');
+    if (welcome) welcome.remove();
+    
     container.insertAdjacentHTML('beforeend', `
         <div class="message ${msg.isAdmin ? 'admin' : ''}" data-id="${msg.id}">
             <div class="message-header">
@@ -228,8 +245,26 @@ socket.on('new_message', (msg) => {
         </div>
     `);
     container.scrollTop = container.scrollHeight;
+    
+    document.querySelectorAll('.delete-msg').forEach(btn => {
+        btn.onclick = () => socket.emit('delete_message', parseInt(btn.dataset.id));
+    });
 });
 
+socket.on('messages_update', (msgs) => {
+    const container = document.getElementById('messagesContainer');
+    container.innerHTML = msgs.map(msg => `
+        <div class="message ${msg.isAdmin ? 'admin' : ''}" data-id="${msg.id}">
+            <div class="message-header">
+                <strong>${msg.userName}</strong> • ${msg.time}
+                ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${msg.id}">🗑️</button>` : ''}
+            </div>
+            <div class="message-text">${escapeHtml(msg.text)}</div>
+        </div>
+    `).join('');
+});
+
+// Отправка сообщений
 document.getElementById('sendBtn').onclick = () => {
     const input = document.getElementById('messageInput');
     if (input.value.trim()) {
@@ -242,8 +277,6 @@ document.getElementById('messageInput').onkeypress = (e) => {
 };
 
 // Звонки
-let pendingCall = null;
-
 function startCall(targetId, targetName) {
     socket.emit('call_user', { targetId });
     pendingCall = { targetId, targetName };
@@ -265,6 +298,7 @@ document.getElementById('acceptCallBtn').onclick = async () => {
         document.getElementById('incomingCall').classList.add('hidden');
         document.getElementById('callStatus').innerHTML = `🎙️ В звонке с ${pendingCall.fromName}`;
         document.getElementById('activeCallInfo').classList.remove('hidden');
+        pendingCall = null;
     }
 };
 
@@ -280,18 +314,24 @@ socket.on('call_accepted', async (data) => {
     document.getElementById('callStatus').innerHTML = `🎙️ В звонке с ${data.toName}`;
     if (pendingCall) {
         await initWebRTC(pendingCall.targetId, false);
+        pendingCall = null;
     }
 });
 
 socket.on('call_rejected', () => {
-    alert('Звонок отклонён');
+    alert('❌ Звонок отклонён');
     document.getElementById('activeCallInfo').classList.add('hidden');
-    if (peerConnection) peerConnection.close();
+    endCall();
 });
 
 socket.on('call_ended', () => {
-    alert('Звонок завершён');
+    alert('🔴 Звонок завершён');
     endCall();
+});
+
+socket.on('call_error', (msg) => {
+    alert(msg);
+    document.getElementById('activeCallInfo').classList.add('hidden');
 });
 
 document.getElementById('hangupCallBtn').onclick = () => {
@@ -302,30 +342,35 @@ document.getElementById('hangupCallBtn').onclick = () => {
 };
 
 async function initWebRTC(targetId, isAnswer) {
-    const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-    peerConnection = new RTCPeerConnection(configuration);
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-    
-    const remoteAudio = new Audio();
-    remoteAudio.autoplay = true;
-    peerConnection.ontrack = (event) => {
-        remoteAudio.srcObject = event.streams[0];
-    };
-    
-    peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-            socket.emit('webrtc_ice', { targetId, candidate: event.candidate });
+    try {
+        const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        peerConnection = new RTCPeerConnection(configuration);
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        
+        const remoteAudio = new Audio();
+        remoteAudio.autoplay = true;
+        peerConnection.ontrack = (event) => {
+            remoteAudio.srcObject = event.streams[0];
+        };
+        
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.emit('webrtc_ice', { targetId, candidate: event.candidate });
+            }
+        };
+        
+        if (!isAnswer) {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit('webrtc_offer', { targetId, offer });
         }
-    };
-    
-    if (!isAnswer) {
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        socket.emit('webrtc_offer', { targetId, offer });
+        
+        currentCallWith = targetId;
+    } catch(e) {
+        console.error('WebRTC error:', e);
+        alert('❌ Ошибка доступа к микрофону. Разрешите доступ.');
     }
-    
-    currentCallWith = targetId;
 }
 
 socket.on('webrtc_offer', async (data) => {
@@ -350,12 +395,17 @@ socket.on('webrtc_ice', async (data) => {
 });
 
 function endCall() {
-    if (peerConnection) peerConnection.close();
-    if (localStream) localStream.getTracks().forEach(t => t.stop());
-    peerConnection = null;
-    localStream = null;
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+        localStream = null;
+    }
     currentCallWith = null;
     document.getElementById('activeCallInfo').classList.add('hidden');
+    document.getElementById('incomingCall').classList.add('hidden');
 }
 
 function escapeHtml(str) {
