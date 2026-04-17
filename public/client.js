@@ -3,7 +3,7 @@ const socket = io({ auth: { userId: getCookie('userId') } });
 let currentUser = null;
 let localStream = null, peerConnection = null, currentCallWith = null;
 let soundEnabled = true, pendingCall = null;
-let currentCaptcha = 0;
+let currentCaptchaValue = 0;
 
 function getCookie(name) {
     const value = `; ${document.cookie}`;
@@ -11,17 +11,17 @@ function getCookie(name) {
     if (parts.length === 2) return parts.pop().split(';').shift();
 }
 
-// Капча
+// ============ КАПЧА ============
 async function refreshCaptcha() {
     const res = await fetch('/api/get-captcha', { method: 'POST' });
     const data = await res.json();
-    currentCaptcha = data.captcha;
-    document.getElementById('captchaQuestion').innerHTML = `${currentCaptcha} + ? = ${currentCaptcha + 1}`;
+    currentCaptchaValue = data.captcha;
+    document.getElementById('captchaNumber').innerHTML = currentCaptchaValue;
 }
 refreshCaptcha();
 document.getElementById('refreshCaptchaBtn')?.addEventListener('click', refreshCaptcha);
 
-// Переключение вкладок
+// ============ ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК ============
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.onclick = () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -31,11 +31,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     };
 });
 
-// Логин
+// ============ ЛОГИН ============
 document.getElementById('loginBtn').onclick = async () => {
     const id = document.getElementById('loginId').value.trim();
     const password = document.getElementById('loginPassword').value;
-    if (!id || !password) return showError('Заполните поля');
+    if (!id || !password) return showError('Заполните все поля');
     
     const res = await fetch('/api/login', {
         method: 'POST',
@@ -47,22 +47,23 @@ document.getElementById('loginBtn').onclick = async () => {
     else { currentUser = data.user; initApp(); }
 };
 
-// Регистрация
+// ============ РЕГИСТРАЦИЯ ============
 document.getElementById('registerBtn').onclick = async () => {
     const id = document.getElementById('regId').value.trim();
     const name = document.getElementById('regName').value.trim();
     const password = document.getElementById('regPassword').value;
-    const userCaptcha = document.getElementById('regCaptcha').value;
+    const captchaInput = document.getElementById('regCaptcha').value;
     
     if (!id || id.length < 3) return showError('ID от 3 символов');
     if (!password || password.length < 4) return showError('Пароль от 4 символов');
     if (!name) return showError('Введите имя');
-    if (!userCaptcha) return showError('Введите капчу');
+    if (!captchaInput) return showError('Введите число с картинки');
+    if (parseInt(captchaInput) !== currentCaptchaValue) return showError('Неверная капча');
     
     const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, password, name, userCaptcha: parseInt(userCaptcha) })
+        body: JSON.stringify({ id, password, name, captchaInput: parseInt(captchaInput) })
     });
     const data = await res.json();
     if (data.error) showError(data.error);
@@ -80,16 +81,19 @@ function initApp() {
     document.getElementById('authScreen').classList.add('hidden');
     document.getElementById('mainScreen').classList.remove('hidden');
     document.getElementById('userName').innerHTML = currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name;
+    document.getElementById('userAvatar').innerHTML = currentUser.avatar || '👤';
     if (currentUser.isAdmin) document.getElementById('adminPanel').classList.remove('hidden');
     socket.auth = { userId: currentUser.id };
     socket.connect();
     loadAdminUsers();
 }
 
+// Проверка авторизации
 fetch('/api/me').then(res => res.json()).then(data => {
     if (data.user) { currentUser = data.user; initApp(); socket.connect(); }
 });
 
+// Выход
 document.getElementById('logoutBtn').onclick = async () => {
     await fetch('/api/logout');
     document.cookie = 'userId=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
@@ -117,12 +121,13 @@ document.getElementById('saveSettings').onclick = async () => {
     if (data.success) {
         currentUser = data.user;
         document.getElementById('userName').innerHTML = currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name;
+        document.getElementById('userAvatar').innerHTML = currentUser.avatar || '👤';
         document.getElementById('settingsModal').classList.add('hidden');
-        alert('Профиль обновлён');
+        alert('✅ Профиль обновлён');
     } else alert(data.error);
 };
 
-// Админ: загрузка пользователей
+// Админ-панель
 async function loadAdminUsers() {
     if (!currentUser?.isAdmin) return;
     const res = await fetch('/api/admin/users');
@@ -160,7 +165,7 @@ async function loadAdminUsers() {
     }
 }
 
-// Звук
+// Звук уведомлений
 function playSound() {
     if (!soundEnabled) return;
     try {
@@ -183,12 +188,16 @@ document.getElementById('soundToggle').onclick = () => {
 
 // Socket события
 socket.on('connect', () => console.log('connected'));
-socket.on('force_logout', () => { alert('Вы забанены'); location.reload(); });
+socket.on('force_logout', () => { alert('⛔ Вы забанены'); location.reload(); });
 
 socket.on('users_update', (users) => {
     const container = document.getElementById('usersList');
     const onlineUsers = users.filter(u => u.online && u.id !== currentUser?.id);
     document.getElementById('onlineCount').innerText = onlineUsers.length;
+    if (onlineUsers.length === 0) {
+        container.innerHTML = '<div class="empty">👻 Никого нет в сети</div>';
+        return;
+    }
     container.innerHTML = onlineUsers.map(u => `
         <div class="user-item">
             <span class="name">${u.displayName}</span>
@@ -203,20 +212,21 @@ socket.on('users_update', (users) => {
 socket.on('user_typing', (data) => {
     const el = document.getElementById('typingIndicator');
     if (data.isTyping && data.userId !== currentUser?.id) {
-        el.innerHTML = `${data.userName} печатает...`;
+        el.innerHTML = `✍️ ${data.userName} печатает...`;
         el.classList.remove('hidden');
     } else el.classList.add('hidden');
 });
 
 socket.on('messages_history', (msgs) => {
     const container = document.getElementById('messages');
+    if (!msgs.length) return;
     container.innerHTML = msgs.map(m => `
         <div class="message ${m.isAdmin ? 'admin' : ''}">
             <div class="message-header">
                 <strong>${m.userName}</strong> • ${m.time}
                 ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${m.id}">🗑️</button>` : ''}
             </div>
-            <div>${escapeHtml(m.text)}</div>
+            <div class="message-text">${escapeHtml(m.text)}</div>
         </div>
     `).join('');
     container.scrollTop = container.scrollHeight;
@@ -228,16 +238,21 @@ socket.on('messages_history', (msgs) => {
 socket.on('new_message', (m) => {
     playSound();
     const container = document.getElementById('messages');
+    const empty = container.querySelector('.empty-message');
+    if (empty) empty.remove();
     container.insertAdjacentHTML('beforeend', `
         <div class="message ${m.isAdmin ? 'admin' : ''}">
             <div class="message-header">
                 <strong>${m.userName}</strong> • ${m.time}
                 ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${m.id}">🗑️</button>` : ''}
             </div>
-            <div>${escapeHtml(m.text)}</div>
+            <div class="message-text">${escapeHtml(m.text)}</div>
         </div>
     `);
     container.scrollTop = container.scrollHeight;
+    document.querySelectorAll('.delete-msg').forEach(btn => {
+        btn.onclick = () => socket.emit('delete_message', parseInt(btn.dataset.id));
+    });
 });
 
 socket.on('messages_update', (msgs) => {
@@ -248,7 +263,7 @@ socket.on('messages_update', (msgs) => {
                 <strong>${m.userName}</strong> • ${m.time}
                 ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${m.id}">🗑️</button>` : ''}
             </div>
-            <div>${escapeHtml(m.text)}</div>
+            <div class="message-text">${escapeHtml(m.text)}</div>
         </div>
     `).join('');
 });
@@ -311,8 +326,8 @@ socket.on('call_accepted', async (data) => {
     }
 });
 
-socket.on('call_rejected', () => { alert('Звонок отклонён'); endCall(); });
-socket.on('call_ended', () => { alert('Звонок завершён'); endCall(); });
+socket.on('call_rejected', () => { alert('❌ Звонок отклонён'); endCall(); });
+socket.on('call_ended', () => { alert('🔴 Звонок завершён'); endCall(); });
 socket.on('call_error', (msg) => { alert(msg); endCall(); });
 
 document.getElementById('hangupBtn').onclick = () => {
@@ -337,7 +352,7 @@ async function initWebRTC(targetId, isAnswer) {
             socket.emit('webrtc_offer', { targetId, offer });
         }
         currentCallWith = targetId;
-    } catch(e) { alert('Ошибка микрофона'); }
+    } catch(e) { alert('❌ Ошибка доступа к микрофону'); }
 }
 
 socket.on('webrtc_offer', async (data) => {
@@ -363,4 +378,11 @@ function endCall() {
     document.getElementById('incomingCall').classList.add('hidden');
 }
 
-function escapeHtml(str) { return str.replace(/[&<>]/g, function(m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]; }); }
+function escapeHtml(str) {
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
