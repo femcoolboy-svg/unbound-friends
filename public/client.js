@@ -8,12 +8,29 @@ let peerConnection = null;
 let currentCallWith = null;
 let soundEnabled = true;
 let pendingCall = null;
+let typingTimeout = null;
 
 function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
     if (parts.length === 2) return parts.pop().split(';').shift();
 }
+
+// Мобильное меню
+let sidebarOpen = false;
+let callsPanelOpen = false;
+
+document.getElementById('showCallsBtn')?.addEventListener('click', () => {
+    const panel = document.querySelector('.calls-panel');
+    panel.classList.add('open');
+    callsPanelOpen = true;
+});
+
+document.getElementById('closeCallsBtn')?.addEventListener('click', () => {
+    const panel = document.querySelector('.calls-panel');
+    panel.classList.remove('open');
+    callsPanelOpen = false;
+});
 
 // Переключение вкладок
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -161,14 +178,36 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
     }
 };
 
-// Звук уведомлений
+// Индикатор набора текста
+const messageInput = document.getElementById('messageInput');
+
+messageInput.addEventListener('input', () => {
+    socket.emit('typing', { isTyping: true });
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+        socket.emit('typing', { isTyping: false });
+    }, 1000);
+});
+
+// Звук уведомлений (улучшенный)
+let audioContext = null;
+
 function playNotificationSound() {
     if (!soundEnabled) return;
     try {
-        const audio = new Audio('data:audio/wav;base64,U3RlYWx0aCBzb3VuZA==');
-        audio.volume = 0.3;
-        audio.play().catch(() => {});
-    } catch(e) {}
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        oscillator.frequency.value = 880;
+        gainNode.gain.value = 0.15;
+        oscillator.start();
+        gainNode.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + 0.4);
+        oscillator.stop(audioContext.currentTime + 0.4);
+    } catch(e) { console.log('Audio error'); }
 }
 
 document.getElementById('toggleSoundBtn').onclick = () => {
@@ -210,6 +249,16 @@ socket.on('users_update', (users) => {
     });
 });
 
+socket.on('user_typing', (data) => {
+    const typingIndicator = document.getElementById('typingIndicator');
+    if (data.isTyping && data.userId !== currentUser?.id) {
+        typingIndicator.innerHTML = `${data.userName} печатает...`;
+        typingIndicator.classList.remove('hidden');
+    } else {
+        typingIndicator.classList.add('hidden');
+    }
+});
+
 socket.on('messages_history', (msgs) => {
     const container = document.getElementById('messagesContainer');
     if (!msgs.length) return;
@@ -235,16 +284,19 @@ socket.on('new_message', (msg) => {
     const welcome = container.querySelector('.welcome-message');
     if (welcome) welcome.remove();
     
-    container.insertAdjacentHTML('beforeend', `
-        <div class="message ${msg.isAdmin ? 'admin' : ''}" data-id="${msg.id}">
-            <div class="message-header">
-                <strong>${msg.userName}</strong> • ${msg.time}
-                ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${msg.id}">🗑️</button>` : ''}
-            </div>
-            <div class="message-text">${escapeHtml(msg.text)}</div>
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${msg.isAdmin ? 'admin' : ''} new`;
+    messageDiv.innerHTML = `
+        <div class="message-header">
+            <strong>${msg.userName}</strong> • ${msg.time}
+            ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${msg.id}">🗑️</button>` : ''}
         </div>
-    `);
+        <div class="message-text">${escapeHtml(msg.text)}</div>
+    `;
+    container.appendChild(messageDiv);
     container.scrollTop = container.scrollHeight;
+    
+    setTimeout(() => messageDiv.classList.remove('new'), 500);
     
     document.querySelectorAll('.delete-msg').forEach(btn => {
         btn.onclick = () => socket.emit('delete_message', parseInt(btn.dataset.id));
@@ -416,3 +468,15 @@ function escapeHtml(str) {
         return m;
     });
 }
+
+// Закрытие мобильных панелей при клике вне
+document.addEventListener('click', (e) => {
+    if (sidebarOpen && !e.target.closest('.sidebar') && !e.target.closest('.show-sidebar-btn')) {
+        document.querySelector('.sidebar').classList.remove('open');
+        sidebarOpen = false;
+    }
+    if (callsPanelOpen && !e.target.closest('.calls-panel') && !e.target.closest('.show-calls-btn')) {
+        document.querySelector('.calls-panel').classList.remove('open');
+        callsPanelOpen = false;
+    }
+});
