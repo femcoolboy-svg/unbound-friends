@@ -1,0 +1,14 @@
+{
+  "name": "unbound-friends",
+  "version": "1.0.0",
+  "description": "Real-time chat & calls with admin panel",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1",
+    "cookie-parser": "^1.4.6"
+  }
+}
