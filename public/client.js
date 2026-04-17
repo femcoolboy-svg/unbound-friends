@@ -3,7 +3,7 @@ const socket = io({ auth: { userId: getCookie('userId') } });
 let currentUser = null;
 let localStream = null, peerConnection = null, currentCallWith = null;
 let soundEnabled = true, pendingCall = null;
-let currentCaptchaValue = 0;
+let currentCaptcha = 0;
 
 function getCookie(name) {
     const value = `; ${document.cookie}`;
@@ -11,32 +11,32 @@ function getCookie(name) {
     if (parts.length === 2) return parts.pop().split(';').shift();
 }
 
-// ============ КАПЧА ============
+// Капча
 async function refreshCaptcha() {
     const res = await fetch('/api/get-captcha', { method: 'POST' });
     const data = await res.json();
-    currentCaptchaValue = data.captcha;
-    document.getElementById('captchaNumber').innerHTML = currentCaptchaValue;
+    currentCaptcha = data.captcha;
+    document.getElementById('captchaNum').innerHTML = currentCaptcha;
 }
 refreshCaptcha();
-document.getElementById('refreshCaptchaBtn')?.addEventListener('click', refreshCaptcha);
+document.getElementById('refreshCaptcha')?.addEventListener('click', refreshCaptcha);
 
-// ============ ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК ============
-document.querySelectorAll('.tab-btn').forEach(btn => {
+// Переключение вкладок
+document.querySelectorAll('.tab').forEach(btn => {
     btn.onclick = () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        document.getElementById('loginTab').classList.toggle('hidden', btn.dataset.tab !== 'login');
-        document.getElementById('registerTab').classList.toggle('hidden', btn.dataset.tab !== 'register');
+        const tab = btn.dataset.tab;
+        document.getElementById('loginTab').classList.toggle('hidden', tab !== 'login');
+        document.getElementById('registerTab').classList.toggle('hidden', tab !== 'register');
     };
 });
 
-// ============ ЛОГИН ============
+// Логин
 document.getElementById('loginBtn').onclick = async () => {
     const id = document.getElementById('loginId').value.trim();
     const password = document.getElementById('loginPassword').value;
-    if (!id || !password) return showError('Заполните все поля');
-    
+    if (!id || !password) return showError('Заполните поля');
     const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -47,19 +47,17 @@ document.getElementById('loginBtn').onclick = async () => {
     else { currentUser = data.user; initApp(); }
 };
 
-// ============ РЕГИСТРАЦИЯ ============
+// Регистрация
 document.getElementById('registerBtn').onclick = async () => {
     const id = document.getElementById('regId').value.trim();
     const name = document.getElementById('regName').value.trim();
     const password = document.getElementById('regPassword').value;
     const captchaInput = document.getElementById('regCaptcha').value;
-    
     if (!id || id.length < 3) return showError('ID от 3 символов');
     if (!password || password.length < 4) return showError('Пароль от 4 символов');
     if (!name) return showError('Введите имя');
-    if (!captchaInput) return showError('Введите число с картинки');
-    if (parseInt(captchaInput) !== currentCaptchaValue) return showError('Неверная капча');
-    
+    if (!captchaInput) return showError('Введите капчу');
+    if (parseInt(captchaInput) !== currentCaptcha) return showError('Неверная капча');
     const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,50 +78,18 @@ function showError(msg) {
 function initApp() {
     document.getElementById('authScreen').classList.add('hidden');
     document.getElementById('mainScreen').classList.remove('hidden');
-    
-    // Отображаем имя с красным для админа
+    document.getElementById('userName').innerHTML = currentUser.name;
     if (currentUser.isAdmin) {
-        document.getElementById('userName').innerHTML = `${currentUser.name} <span class="admin-badge">АДМИН</span>`;
-        document.getElementById('userName').classList.add('admin-name');
-    } else {
-        document.getElementById('userName').innerHTML = currentUser.name;
+        document.getElementById('adminBadge').classList.remove('hidden');
+        document.getElementById('adminPanel').classList.remove('hidden');
     }
-    
-    document.getElementById('userAvatar').src = currentUser.avatar || '/uploads/default-avatar.png';
-    if (currentUser.isAdmin) document.getElementById('adminPanel').classList.remove('hidden');
-    
+    document.getElementById('avatarImg').src = currentUser.avatar + '?t=' + Date.now();
     socket.auth = { userId: currentUser.id };
     socket.connect();
-    loadAdminUsers();
     loadFriends();
+    loadAdminUsers();
 }
 
-// ============ ЗАГРУЗКА АВАТАРКИ ============
-document.getElementById('uploadAvatarBtn').onclick = () => {
-    document.getElementById('avatarInput').click();
-};
-
-document.getElementById('avatarInput').onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    const formData = new FormData();
-    formData.append('avatar', file);
-    
-    const res = await fetch('/api/upload-avatar', {
-        method: 'POST',
-        body: formData
-    });
-    const data = await res.json();
-    if (data.success) {
-        document.getElementById('userAvatar').src = data.avatar + '?t=' + Date.now();
-        currentUser.avatar = data.avatar;
-    } else {
-        alert('Ошибка загрузки');
-    }
-};
-
-// Проверка авторизации
 fetch('/api/me').then(res => res.json()).then(data => {
     if (data.user) { currentUser = data.user; initApp(); socket.connect(); }
 });
@@ -135,6 +101,21 @@ document.getElementById('logoutBtn').onclick = async () => {
     location.reload();
 };
 
+// Загрузка аватарки
+document.getElementById('uploadAvatarBtn').onclick = () => document.getElementById('avatarFile').click();
+document.getElementById('avatarFile').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('avatar', file);
+    const res = await fetch('/api/upload-avatar', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.success) {
+        document.getElementById('avatarImg').src = data.avatar + '?t=' + Date.now();
+        currentUser.avatar = data.avatar;
+    } else alert('Ошибка загрузки');
+};
+
 // Настройки
 document.getElementById('settingsBtn').onclick = () => {
     document.getElementById('settingsName').value = currentUser.name;
@@ -142,32 +123,26 @@ document.getElementById('settingsBtn').onclick = () => {
 };
 document.getElementById('closeSettings').onclick = () => document.getElementById('settingsModal').classList.add('hidden');
 document.getElementById('saveSettings').onclick = async () => {
+    const name = document.getElementById('settingsName').value.trim();
+    const password = document.getElementById('settingsPassword').value;
     const res = await fetch('/api/update-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            name: document.getElementById('settingsName').value.trim(),
-            password: document.getElementById('settingsPassword').value
-        })
+        body: JSON.stringify({ name, password })
     });
     const data = await res.json();
     if (data.success) {
         currentUser = data.user;
-        if (currentUser.isAdmin) {
-            document.getElementById('userName').innerHTML = `${currentUser.name} <span class="admin-badge">АДМИН</span>`;
-        } else {
-            document.getElementById('userName').innerHTML = currentUser.name;
-        }
+        document.getElementById('userName').innerHTML = currentUser.name;
         document.getElementById('settingsModal').classList.add('hidden');
-        alert('✅ Профиль обновлён');
+        alert('Профиль обновлён');
     } else alert(data.error);
 };
 
-// ============ ПОИСК ДРУЗЕЙ ============
+// Поиск друзей
 document.getElementById('searchBtn').onclick = async () => {
     const query = document.getElementById('searchInput').value.trim();
     if (query.length < 2) return;
-    
     const res = await fetch('/api/search-users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -175,21 +150,19 @@ document.getElementById('searchBtn').onclick = async () => {
     });
     const data = await res.json();
     const resultsDiv = document.getElementById('searchResults');
-    
-    if (data.users.length === 0) {
-        resultsDiv.innerHTML = '<div class="empty-message">😔 Никого не найдено</div>';
+    if (!data.users.length) {
+        resultsDiv.innerHTML = '<div>😔 Никого не найдено</div>';
         resultsDiv.classList.remove('hidden');
         return;
     }
-    
     resultsDiv.innerHTML = data.users.map(u => `
         <div class="search-result-item">
-            <span><img src="${u.avatar}" style="width:30px;height:30px;border-radius:50%;vertical-align:middle;margin-right:8px"> ${u.name} (${u.id}) ${u.online ? '🟢' : '⚫'}</span>
-            <button class="add-friend-btn" data-id="${u.id}">➕ Добавить</button>
+            <img src="${u.avatar}" style="width:30px;height:30px;border-radius:50%;margin-right:8px">
+            ${u.name} (${u.id}) ${u.online ? '🟢' : '⚫'}
+            <button class="add-friend-btn" data-id="${u.id}">➕</button>
         </div>
     `).join('');
     resultsDiv.classList.remove('hidden');
-    
     document.querySelectorAll('.add-friend-btn').forEach(btn => {
         btn.onclick = async () => {
             const res = await fetch('/api/add-friend', {
@@ -198,39 +171,30 @@ document.getElementById('searchBtn').onclick = async () => {
                 body: JSON.stringify({ friendId: btn.dataset.id })
             });
             const data = await res.json();
-            if (data.success) {
-                alert('✅ Друг добавлен!');
-                loadFriends();
-            } else alert(data.error);
+            if (data.success) { alert('Друг добавлен'); loadFriends(); }
+            else alert(data.error);
         };
     });
 };
 
-// ============ ЗАГРУЗКА ДРУЗЕЙ ============
 async function loadFriends() {
     const res = await fetch('/api/friends');
     const data = await res.json();
     const container = document.getElementById('friendsList');
     document.getElementById('friendsCount').innerText = data.friends.length;
-    
-    if (data.friends.length === 0) {
-        container.innerHTML = '<div class="empty-message">👋 Добавь друзей через поиск</div>';
-        return;
-    }
-    
+    if (!data.friends.length) { container.innerHTML = '<div>👋 Добавь друзей</div>'; return; }
     container.innerHTML = data.friends.map(f => `
         <div class="friend-item">
-            <span><img src="${f.avatar}" style="width:30px;height:30px;border-radius:50%;vertical-align:middle;margin-right:8px"> ${f.name} ${f.online ? '<span class="online-dot"></span>' : '⚫'}</span>
-            <button class="friend-call-btn" data-id="${f.id}" data-name="${f.name}">📞 Позвонить</button>
+            <img src="${f.avatar}" style="width:30px;height:30px;border-radius:50%;margin-right:8px">
+            ${f.name} ${f.online ? '🟢' : '⚫'}
+            <button class="friend-call-btn" data-id="${f.id}" data-name="${f.name}">📞</button>
         </div>
     `).join('');
-    
     document.querySelectorAll('.friend-call-btn').forEach(btn => {
         btn.onclick = () => startCall(btn.dataset.id, btn.dataset.name);
     });
 }
 
-// ============ АДМИН-ПАНЕЛЬ ============
 async function loadAdminUsers() {
     if (!currentUser?.isAdmin) return;
     const res = await fetch('/api/admin/users');
@@ -247,30 +211,20 @@ async function loadAdminUsers() {
         `).join('');
         document.querySelectorAll('.ban-btn').forEach(btn => {
             btn.onclick = async () => {
-                await fetch('/api/admin/ban', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ targetId: btn.dataset.id })
-                });
-                loadAdminUsers();
-                loadFriends();
+                await fetch('/api/admin/ban', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: btn.dataset.id }) });
+                loadAdminUsers(); loadFriends();
             };
         });
         document.querySelectorAll('.unban-btn').forEach(btn => {
             btn.onclick = async () => {
-                await fetch('/api/admin/unban', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ targetId: btn.dataset.id })
-                });
-                loadAdminUsers();
-                loadFriends();
+                await fetch('/api/admin/unban', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: btn.dataset.id }) });
+                loadAdminUsers(); loadFriends();
             };
         });
     }
 }
 
-// ============ ЗВУК ============
+// Звук
 function playSound() {
     if (!soundEnabled) return;
     try {
@@ -291,10 +245,9 @@ document.getElementById('soundToggle').onclick = () => {
     document.getElementById('soundToggle').innerHTML = soundEnabled ? '🔊' : '🔇';
 };
 
-// ============ ЧАТ В РЕАЛЬНОМ ВРЕМЕНИ ============
+// Socket события
 socket.on('connect', () => console.log('connected'));
-socket.on('force_logout', () => { alert('⛔ Вы забанены'); location.reload(); });
-
+socket.on('force_logout', () => { alert('Вы забанены'); location.reload(); });
 socket.on('users_update', () => { loadFriends(); });
 
 socket.on('user_typing', (data) => {
@@ -307,17 +260,14 @@ socket.on('user_typing', (data) => {
 
 socket.on('messages_history', (msgs) => {
     const container = document.getElementById('messages');
-    if (!msgs.length) {
-        container.innerHTML = '<div class="empty-message">💬 Напиши первое сообщение!</div>';
-        return;
-    }
+    if (!msgs.length) { container.innerHTML = '<div>💬 Напиши первое сообщение</div>'; return; }
     container.innerHTML = msgs.map(m => `
         <div class="message ${m.isAdmin ? 'admin' : ''}">
             <div class="message-header">
                 <strong>${m.userName}</strong> • ${m.time}
                 ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${m.id}">🗑️</button>` : ''}
             </div>
-            <div class="message-text">${escapeHtml(m.text)}</div>
+            <div>${escapeHtml(m.text)}</div>
         </div>
     `).join('');
     container.scrollTop = container.scrollHeight;
@@ -329,7 +279,7 @@ socket.on('messages_history', (msgs) => {
 socket.on('new_message', (m) => {
     playSound();
     const container = document.getElementById('messages');
-    const empty = container.querySelector('.empty-message');
+    const empty = container.querySelector('.empty');
     if (empty) empty.remove();
     container.insertAdjacentHTML('beforeend', `
         <div class="message ${m.isAdmin ? 'admin' : ''}">
@@ -337,7 +287,7 @@ socket.on('new_message', (m) => {
                 <strong>${m.userName}</strong> • ${m.time}
                 ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${m.id}">🗑️</button>` : ''}
             </div>
-            <div class="message-text">${escapeHtml(m.text)}</div>
+            <div>${escapeHtml(m.text)}</div>
         </div>
     `);
     container.scrollTop = container.scrollHeight;
@@ -354,12 +304,11 @@ socket.on('messages_update', (msgs) => {
                 <strong>${m.userName}</strong> • ${m.time}
                 ${currentUser?.isAdmin ? `<button class="delete-msg" data-id="${m.id}">🗑️</button>` : ''}
             </div>
-            <div class="message-text">${escapeHtml(m.text)}</div>
+            <div>${escapeHtml(m.text)}</div>
         </div>
     `).join('');
 });
 
-// Отправка сообщений
 document.getElementById('sendBtn').onclick = () => {
     const input = document.getElementById('messageInput');
     if (input.value.trim()) {
@@ -377,7 +326,7 @@ document.getElementById('messageInput').oninput = () => {
     typingTimeout = setTimeout(() => socket.emit('typing', { isTyping: false }), 1000);
 };
 
-// ============ ЗВОНКИ (рабочие) ============
+// Звонки
 function startCall(targetId, targetName) {
     socket.emit('call_user', { targetId });
     pendingCall = { targetId, targetName };
@@ -417,8 +366,8 @@ socket.on('call_accepted', async (data) => {
     }
 });
 
-socket.on('call_rejected', () => { alert('❌ Звонок отклонён'); endCall(); });
-socket.on('call_ended', () => { alert('🔴 Звонок завершён'); endCall(); });
+socket.on('call_rejected', () => { alert('Звонок отклонён'); endCall(); });
+socket.on('call_ended', () => { alert('Звонок завершён'); endCall(); });
 socket.on('call_error', (msg) => { alert(msg); endCall(); });
 
 document.getElementById('hangupBtn').onclick = () => {
@@ -432,27 +381,18 @@ async function initWebRTC(targetId, isAnswer) {
         peerConnection = new RTCPeerConnection(config);
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-        
-        const remoteAudio = new Audio();
-        remoteAudio.autoplay = true;
-        peerConnection.ontrack = (e) => {
-            remoteAudio.srcObject = e.streams[0];
-        };
-        
-        peerConnection.onicecandidate = (e) => {
+        const remoteAudio = new Audio(); remoteAudio.autoplay = true;
+        peerConnection.ontrack = e => remoteAudio.srcObject = e.streams[0];
+        peerConnection.onicecandidate = e => {
             if (e.candidate) socket.emit('webrtc_ice', { targetId, candidate: e.candidate });
         };
-        
         if (!isAnswer) {
             const offer = await peerConnection.createOffer();
             await peerConnection.setLocalDescription(offer);
             socket.emit('webrtc_offer', { targetId, offer });
         }
         currentCallWith = targetId;
-    } catch(e) {
-        console.error(e);
-        alert('❌ Ошибка доступа к микрофону. Разрешите доступ.');
-    }
+    } catch(e) { alert('Ошибка микрофона'); }
 }
 
 socket.on('webrtc_offer', async (data) => {
@@ -463,34 +403,21 @@ socket.on('webrtc_offer', async (data) => {
         socket.emit('webrtc_answer', { targetId: data.from, answer });
     }
 });
-
 socket.on('webrtc_answer', async (data) => {
-    if (peerConnection) {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-    }
+    if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
 });
-
 socket.on('webrtc_ice', async (data) => {
-    if (peerConnection) {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-    }
+    if (peerConnection) await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
 });
 
 function endCall() {
     if (peerConnection) peerConnection.close();
     if (localStream) localStream.getTracks().forEach(t => t.stop());
-    peerConnection = null;
-    localStream = null;
-    currentCallWith = null;
+    peerConnection = null; localStream = null; currentCallWith = null;
     document.getElementById('activeCall').classList.add('hidden');
     document.getElementById('incomingCall').classList.add('hidden');
 }
 
 function escapeHtml(str) {
-    return str.replace(/[&<>]/g, function(m) {
-        if (m === '&') return '&amp;';
-        if (m === '<') return '&lt;';
-        if (m === '>') return '&gt;';
-        return m;
-    });
+    return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m]));
 }
