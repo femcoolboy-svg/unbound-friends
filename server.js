@@ -25,9 +25,8 @@ let users = [
 
 let messages = [];
 let activeCalls = [];
-let bannedUsers = []; // список забаненных ID
+let bannedUsers = [];
 
-// Сохранение в файл
 const fs = require('fs');
 const DATA_FILE = './data.json';
 
@@ -50,12 +49,8 @@ function loadData() {
             messages = data.messages || [];
             bannedUsers = data.bannedUsers || [];
             
-            // Админ всегда существует и не забанен
             const admin = users.find(u => u.id === 'prisanok');
-            if (admin) {
-                admin.isAdmin = true;
-                admin.isBanned = false;
-            } else {
+            if (!admin) {
                 users.unshift({
                     id: 'prisanok',
                     password: 'prisanok',
@@ -66,6 +61,9 @@ function loadData() {
                     socketId: null,
                     isBanned: false
                 });
+            } else {
+                admin.isAdmin = true;
+                admin.isBanned = false;
             }
         }
     } catch(e) { console.log('Load error:', e); }
@@ -74,36 +72,33 @@ function loadData() {
 loadData();
 setInterval(saveData, 5000);
 
-// ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
+// ============ КАПЧА ============
 function generateCaptcha() {
-    return Math.floor(Math.random() * 199) + 1; // от 1 до 199
+    return Math.floor(Math.random() * 199) + 1; // число от 1 до 199
 }
+
+app.post('/api/get-captcha', (req, res) => {
+    const captchaValue = generateCaptcha();
+    if (!global.captchaStore) global.captchaStore = {};
+    global.captchaStore[req.ip] = captchaValue;
+    setTimeout(() => delete global.captchaStore[req.ip], 300000);
+    res.json({ captcha: captchaValue });
+});
 
 function isNameTaken(name, excludeUserId = null) {
     return users.some(u => u.name.toLowerCase() === name.toLowerCase() && u.id !== excludeUserId);
 }
 
 // ============ API ============
-app.post('/api/get-captcha', (req, res) => {
-    const captcha = generateCaptcha();
-    // Временно храним капчу в памяти (для простоты)
-    if (!global.captchaStore) global.captchaStore = {};
-    global.captchaStore[req.ip] = captcha;
-    setTimeout(() => delete global.captchaStore[req.ip], 300000); // 5 минут
-    res.json({ captcha });
-});
-
 app.post('/api/register', (req, res) => {
-    const { id, password, name, captcha, userCaptcha } = req.body;
+    const { id, password, name, captchaInput } = req.body;
     
-    // Проверка капчи
     const storedCaptcha = global.captchaStore?.[req.ip];
-    if (!storedCaptcha || parseInt(userCaptcha) !== storedCaptcha) {
+    if (!storedCaptcha || parseInt(captchaInput) !== storedCaptcha) {
         return res.json({ error: 'Неверная капча' });
     }
     delete global.captchaStore[req.ip];
     
-    // Валидация
     if (!id || id.trim().length < 3) return res.json({ error: 'ID от 3 символов' });
     if (!password || password.length < 4) return res.json({ error: 'Пароль от 4 символов' });
     if (!name || name.trim().length < 1) return res.json({ error: 'Введите имя' });
@@ -172,10 +167,8 @@ app.post('/api/admin/ban', (req, res) => {
     if (target) {
         target.isBanned = true;
         if (!bannedUsers.includes(targetId)) bannedUsers.push(targetId);
-        
-        // Кикаем с сокета
         if (target.socketId) {
-            io.to(target.socketId).emit('force_logout', { reason: 'Вы были забанены' });
+            io.to(target.socketId).emit('force_logout', { reason: 'Вы забанены' });
         }
         saveData();
         broadcastUsers();
@@ -268,7 +261,6 @@ io.on('connection', (socket) => {
     socket.emit('messages_history', messages);
     broadcastUsers();
     
-    // Индикатор набора текста
     socket.on('typing', (data) => {
         socket.broadcast.emit('user_typing', {
             userId: currentUser.id,
@@ -277,7 +269,6 @@ io.on('connection', (socket) => {
         });
     });
     
-    // Сообщения
     socket.on('send_message', (data) => {
         if (!data.text || !data.text.trim()) return;
         const message = {
@@ -302,7 +293,6 @@ io.on('connection', (socket) => {
         }
     });
     
-    // Звонки
     socket.on('call_user', (data) => {
         const targetUser = users.find(u => u.id === data.targetId);
         if (!targetUser || !targetUser.online || !targetUser.socketId) {
@@ -359,7 +349,6 @@ io.on('connection', (socket) => {
         }
     });
     
-    // WebRTC
     socket.on('webrtc_offer', (data) => {
         const target = users.find(u => u.id === data.targetId);
         if (target && target.online && target.socketId) {
@@ -406,5 +395,6 @@ function broadcastUsers() {
 const PORT = 3000;
 server.listen(PORT, () => {
     console.log(`\n🚀 UNBOUND сервер запущен на http://localhost:${PORT}`);
-    console.log(`👑 Админ: prisanok / prisanok\n`);
+    console.log(`👑 Админ: prisanok / prisanok`);
+    console.log(`📝 Капча: введи число, которое видишь на экране\n`);
 });
