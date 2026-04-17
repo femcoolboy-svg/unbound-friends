@@ -80,14 +80,48 @@ function showError(msg) {
 function initApp() {
     document.getElementById('authScreen').classList.add('hidden');
     document.getElementById('mainScreen').classList.remove('hidden');
-    document.getElementById('userName').innerHTML = currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name;
-    document.getElementById('userAvatar').innerHTML = currentUser.avatar || '👤';
+    
+    // Отображаем имя с красным для админа
+    if (currentUser.isAdmin) {
+        document.getElementById('userName').innerHTML = `${currentUser.name} <span class="admin-badge">АДМИН</span>`;
+        document.getElementById('userName').classList.add('admin-name');
+    } else {
+        document.getElementById('userName').innerHTML = currentUser.name;
+    }
+    
+    document.getElementById('userAvatar').src = currentUser.avatar || '/uploads/default-avatar.png';
     if (currentUser.isAdmin) document.getElementById('adminPanel').classList.remove('hidden');
+    
     socket.auth = { userId: currentUser.id };
     socket.connect();
     loadAdminUsers();
     loadFriends();
 }
+
+// ============ ЗАГРУЗКА АВАТАРКИ ============
+document.getElementById('uploadAvatarBtn').onclick = () => {
+    document.getElementById('avatarInput').click();
+};
+
+document.getElementById('avatarInput').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const formData = new FormData();
+    formData.append('avatar', file);
+    
+    const res = await fetch('/api/upload-avatar', {
+        method: 'POST',
+        body: formData
+    });
+    const data = await res.json();
+    if (data.success) {
+        document.getElementById('userAvatar').src = data.avatar + '?t=' + Date.now();
+        currentUser.avatar = data.avatar;
+    } else {
+        alert('Ошибка загрузки');
+    }
+};
 
 // Проверка авторизации
 fetch('/api/me').then(res => res.json()).then(data => {
@@ -104,7 +138,6 @@ document.getElementById('logoutBtn').onclick = async () => {
 // Настройки
 document.getElementById('settingsBtn').onclick = () => {
     document.getElementById('settingsName').value = currentUser.name;
-    document.getElementById('settingsAvatar').value = currentUser.avatar || '👤';
     document.getElementById('settingsModal').classList.remove('hidden');
 };
 document.getElementById('closeSettings').onclick = () => document.getElementById('settingsModal').classList.add('hidden');
@@ -114,15 +147,17 @@ document.getElementById('saveSettings').onclick = async () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             name: document.getElementById('settingsName').value.trim(),
-            avatar: document.getElementById('settingsAvatar').value.trim(),
             password: document.getElementById('settingsPassword').value
         })
     });
     const data = await res.json();
     if (data.success) {
         currentUser = data.user;
-        document.getElementById('userName').innerHTML = currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name;
-        document.getElementById('userAvatar').innerHTML = currentUser.avatar || '👤';
+        if (currentUser.isAdmin) {
+            document.getElementById('userName').innerHTML = `${currentUser.name} <span class="admin-badge">АДМИН</span>`;
+        } else {
+            document.getElementById('userName').innerHTML = currentUser.name;
+        }
         document.getElementById('settingsModal').classList.add('hidden');
         alert('✅ Профиль обновлён');
     } else alert(data.error);
@@ -149,7 +184,7 @@ document.getElementById('searchBtn').onclick = async () => {
     
     resultsDiv.innerHTML = data.users.map(u => `
         <div class="search-result-item">
-            <span>${u.avatar || '👤'} ${u.name} (${u.id}) ${u.online ? '🟢' : '⚫'}</span>
+            <span><img src="${u.avatar}" style="width:30px;height:30px;border-radius:50%;vertical-align:middle;margin-right:8px"> ${u.name} (${u.id}) ${u.online ? '🟢' : '⚫'}</span>
             <button class="add-friend-btn" data-id="${u.id}">➕ Добавить</button>
         </div>
     `).join('');
@@ -185,7 +220,7 @@ async function loadFriends() {
     
     container.innerHTML = data.friends.map(f => `
         <div class="friend-item">
-            <span class="name">${f.avatar || '👤'} ${f.name} ${f.online ? '<span class="online-dot"></span>' : '⚫'}</span>
+            <span><img src="${f.avatar}" style="width:30px;height:30px;border-radius:50%;vertical-align:middle;margin-right:8px"> ${f.name} ${f.online ? '<span class="online-dot"></span>' : '⚫'}</span>
             <button class="friend-call-btn" data-id="${f.id}" data-name="${f.name}">📞 Позвонить</button>
         </div>
     `).join('');
@@ -256,13 +291,11 @@ document.getElementById('soundToggle').onclick = () => {
     document.getElementById('soundToggle').innerHTML = soundEnabled ? '🔊' : '🔇';
 };
 
-// ============ SOCKET СОБЫТИЯ ============
+// ============ ЧАТ В РЕАЛЬНОМ ВРЕМЕНИ ============
 socket.on('connect', () => console.log('connected'));
 socket.on('force_logout', () => { alert('⛔ Вы забанены'); location.reload(); });
 
-socket.on('users_update', (users) => {
-    loadFriends();
-});
+socket.on('users_update', () => { loadFriends(); });
 
 socket.on('user_typing', (data) => {
     const el = document.getElementById('typingIndicator');
@@ -344,7 +377,7 @@ document.getElementById('messageInput').oninput = () => {
     typingTimeout = setTimeout(() => socket.emit('typing', { isTyping: false }), 1000);
 };
 
-// Звонки
+// ============ ЗВОНКИ (рабочие) ============
 function startCall(targetId, targetName) {
     socket.emit('call_user', { targetId });
     pendingCall = { targetId, targetName };
@@ -399,18 +432,27 @@ async function initWebRTC(targetId, isAnswer) {
         peerConnection = new RTCPeerConnection(config);
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-        const remoteAudio = new Audio(); remoteAudio.autoplay = true;
-        peerConnection.ontrack = (e) => { remoteAudio.srcObject = e.streams[0]; };
+        
+        const remoteAudio = new Audio();
+        remoteAudio.autoplay = true;
+        peerConnection.ontrack = (e) => {
+            remoteAudio.srcObject = e.streams[0];
+        };
+        
         peerConnection.onicecandidate = (e) => {
             if (e.candidate) socket.emit('webrtc_ice', { targetId, candidate: e.candidate });
         };
+        
         if (!isAnswer) {
             const offer = await peerConnection.createOffer();
             await peerConnection.setLocalDescription(offer);
             socket.emit('webrtc_offer', { targetId, offer });
         }
         currentCallWith = targetId;
-    } catch(e) { alert('❌ Ошибка доступа к микрофону'); }
+    } catch(e) {
+        console.error(e);
+        alert('❌ Ошибка доступа к микрофону. Разрешите доступ.');
+    }
 }
 
 socket.on('webrtc_offer', async (data) => {
@@ -421,17 +463,25 @@ socket.on('webrtc_offer', async (data) => {
         socket.emit('webrtc_answer', { targetId: data.from, answer });
     }
 });
+
 socket.on('webrtc_answer', async (data) => {
-    if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+    if (peerConnection) {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+    }
 });
+
 socket.on('webrtc_ice', async (data) => {
-    if (peerConnection) await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+    if (peerConnection) {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+    }
 });
 
 function endCall() {
     if (peerConnection) peerConnection.close();
     if (localStream) localStream.getTracks().forEach(t => t.stop());
-    peerConnection = null; localStream = null; currentCallWith = null;
+    peerConnection = null;
+    localStream = null;
+    currentCallWith = null;
     document.getElementById('activeCall').classList.add('hidden');
     document.getElementById('incomingCall').classList.add('hidden');
 }
