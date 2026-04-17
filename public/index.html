@@ -2,44 +2,60 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UNBOUND | Друзья + Звонки</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>UNBOUND | Premium Friends & Calls</title>
     <link rel="stylesheet" href="/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
 </head>
 <body>
+    <div class="stars"></div>
+    <div class="twinkling"></div>
+    
     <div class="app" id="app">
-        <!-- АВТОРИЗАЦИЯ С ДВУМЯ ВКЛАДКАМИ -->
+        <!-- АВТОРИЗАЦИЯ -->
         <div id="authScreen" class="auth-screen">
-            <div class="auth-card">
-                <h1>✨ UNBOUND ✨</h1>
+            <div class="auth-card glass">
+                <div class="logo">
+                    <div class="logo-icon">✨</div>
+                    <h1>UNBOUND</h1>
+                </div>
+                <p class="subtitle">Общайся. Звони. Будь свободным.</p>
+                
                 <div class="tabs">
                     <button class="tab-btn active" data-tab="login">🔐 Вход</button>
                     <button class="tab-btn" data-tab="register">📝 Регистрация</button>
                 </div>
                 
-                <!-- Форма входа -->
                 <div id="loginTab" class="tab-content active">
                     <div class="input-group">
+                        <div class="input-icon">👤</div>
                         <input type="text" id="loginId" placeholder="ID" autocomplete="off">
                     </div>
                     <div class="input-group">
+                        <div class="input-icon">🔒</div>
                         <input type="password" id="loginPassword" placeholder="Пароль">
                     </div>
-                    <button id="loginBtn" class="btn-primary">🔓 Войти</button>
+                    <button id="loginBtn" class="btn-primary btn-glow">
+                        <span>🚀 Войти</span>
+                    </button>
                 </div>
                 
-                <!-- Форма регистрации -->
                 <div id="registerTab" class="tab-content hidden">
                     <div class="input-group">
-                        <input type="text" id="regId" placeholder="ID (от 3 символов)" autocomplete="off">
+                        <div class="input-icon">🆔</div>
+                        <input type="text" id="regId" placeholder="ID (от 3 символов)">
                     </div>
                     <div class="input-group">
+                        <div class="input-icon">😊</div>
                         <input type="text" id="regName" placeholder="Имя">
                     </div>
                     <div class="input-group">
+                        <div class="input-icon">🔑</div>
                         <input type="password" id="regPassword" placeholder="Пароль (от 4 символов)">
                     </div>
-                    <button id="registerBtn" class="btn-primary">✨ Зарегистрироваться</button>
+                    <button id="registerBtn" class="btn-primary btn-glow">
+                        <span>✨ Создать аккаунт</span>
+                    </button>
                 </div>
                 
                 <div id="authError" class="error-msg hidden"></div>
@@ -48,55 +64,97 @@
 
         <!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
         <div id="mainScreen" class="main-screen hidden">
-            <div class="sidebar">
-                <div class="user-profile" id="userProfile">
-                    <div class="avatar" id="userAvatar">👤</div>
-                    <div class="user-info">
-                        <span id="userNameDisplay"></span>
-                        <span id="userBadge"></span>
+            <!-- Левая панель -->
+            <div class="sidebar glass">
+                <div class="user-card" id="userProfile">
+                    <div class="user-avatar" id="userAvatar">👤</div>
+                    <div class="user-details">
+                        <div class="user-name" id="userNameDisplay"></div>
+                        <div class="user-status" id="userBadge"></div>
                     </div>
-                    <button id="settingsBtn" class="icon-btn" title="Настройки">⚙️</button>
-                    <button id="logoutBtn" class="icon-btn" title="Выйти">🚪</button>
+                    <div class="user-actions">
+                        <button id="settingsBtn" class="icon-btn" title="Настройки">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        </button>
+                        <button id="logoutBtn" class="icon-btn" title="Выйти">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                        </button>
+                    </div>
                 </div>
                 
-                <div class="users-list">
-                    <h3>🟢 Онлайн (<span id="onlineCount">0</span>)</h3>
-                    <div id="usersContainer" class="users-container"></div>
+                <div class="section-header">
+                    <span>🟢 Онлайн</span>
+                    <span class="online-count" id="onlineCount">0</span>
                 </div>
+                <div class="users-list" id="usersContainer"></div>
             </div>
             
-            <div class="chat-area">
+            <!-- Центральный чат -->
+            <div class="chat-area glass">
                 <div class="chat-header">
-                    <h2>💬 Общий чат</h2>
-                    <button id="toggleSoundBtn" class="sound-btn">🔊</button>
+                    <div class="chat-title">
+                        <span class="chat-icon">💬</span>
+                        <h2>Общий чат</h2>
+                    </div>
+                    <button id="toggleSoundBtn" class="sound-toggle" title="Звук уведомлений">
+                        🔊
+                    </button>
                 </div>
-                <div class="messages-container" id="messagesContainer"></div>
-                <div class="message-input">
-                    <input type="text" id="messageInput" placeholder="Напиши сообщение..." maxlength="500">
-                    <button id="sendBtn" class="btn-primary">📤 Отправить</button>
+                
+                <div class="messages-container" id="messagesContainer">
+                    <div class="welcome-message">
+                        <div class="welcome-icon">✨</div>
+                        <p>Добро пожаловать в UNBOUND!</p>
+                        <small>Начни общение прямо сейчас</small>
+                    </div>
+                </div>
+                
+                <div class="message-input-area">
+                    <div class="input-wrapper">
+                        <input type="text" id="messageInput" placeholder="Напиши сообщение..." maxlength="500" autocomplete="off">
+                        <button id="sendBtn" class="send-btn">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        </button>
+                    </div>
                 </div>
             </div>
             
-            <div class="calls-panel">
-                <h3>📞 Звонки</h3>
-                <div id="activeCallInfo" class="call-info hidden">
-                    <div id="callStatus"></div>
-                    <button id="hangupCallBtn" class="btn-danger">🔴 Завершить</button>
+            <!-- Правая панель звонков -->
+            <div class="calls-panel glass">
+                <div class="section-header">
+                    <span>📞 Звонки</span>
                 </div>
-                <div id="incomingCall" class="incoming-call hidden">
-                    <p>📞 Входящий звонок от <span id="callerName"></span></p>
-                    <div class="call-buttons">
+                
+                <div id="activeCallInfo" class="call-card hidden">
+                    <div class="call-status" id="callStatus"></div>
+                    <button id="hangupCallBtn" class="btn-danger btn-block">🔴 Завершить звонок</button>
+                </div>
+                
+                <div id="incomingCall" class="call-card incoming hidden">
+                    <div class="caller-info">
+                        <div class="caller-avatar">📞</div>
+                        <div>
+                            <div class="caller-label">Входящий звонок</div>
+                            <div class="caller-name" id="callerName"></div>
+                        </div>
+                    </div>
+                    <div class="call-actions">
                         <button id="acceptCallBtn" class="btn-success">✅ Принять</button>
                         <button id="rejectCallBtn" class="btn-danger">❌ Отклонить</button>
                     </div>
+                </div>
+                
+                <div class="info-text">
+                    <p>🎤 Нажми 📞 у друга, чтобы позвонить</p>
+                    <p>🔊 Разреши доступ к микрофону</p>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- МОДАЛЬНОЕ ОКНО НАСТРОЕК (СОВРЕМЕННЫЙ ДИЗАЙН) -->
+    <!-- МОДАЛЬНОЕ ОКНО НАСТРОЕК -->
     <div id="settingsModal" class="modal hidden">
-        <div class="modal-content">
+        <div class="modal-content glass">
             <div class="modal-header">
                 <h2>⚙️ Настройки профиля</h2>
                 <button id="closeSettingsBtn" class="close-btn">✖</button>
@@ -112,7 +170,7 @@
                 </div>
                 <div class="input-group">
                     <label>🔒 Новый пароль</label>
-                    <input type="password" id="settingsPassword" placeholder="Оставь пустым чтобы не менять">
+                    <input type="password" id="settingsPassword" placeholder="Оставь пустым, чтобы не менять">
                 </div>
             </div>
             <div class="modal-footer">
