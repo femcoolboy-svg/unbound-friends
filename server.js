@@ -197,6 +197,15 @@ io.on('connection', (socket) => {
     // Обновление списка пользователей для всех
     broadcastUsers();
     
+    // Индикатор набора текста
+    socket.on('typing', (data) => {
+        socket.broadcast.emit('user_typing', {
+            userId: currentUser.id,
+            userName: currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name,
+            isTyping: data.isTyping
+        });
+    });
+    
     // Обработка нового сообщения
     socket.on('send_message', (data) => {
         if (!data.text || !data.text.trim()) return;
@@ -225,15 +234,24 @@ io.on('connection', (socket) => {
         }
     });
     
-    // Звонок пользователю
+    // Звонок пользователю (улучшенная версия)
     socket.on('call_user', (data) => {
         const targetUser = users.find(u => u.id === data.targetId);
-        if (!targetUser || !targetUser.online) {
+        
+        if (!targetUser || !targetUser.online || !targetUser.socketId) {
             socket.emit('call_error', 'Пользователь не в сети');
             return;
         }
         
+        // Проверяем, не занят ли пользователь уже звонком
+        const existingCall = activeCalls.find(c => c.to === targetUser.id || c.from === targetUser.id);
+        if (existingCall) {
+            socket.emit('call_error', 'Пользователь уже в звонке');
+            return;
+        }
+        
         const call = {
+            id: Date.now(),
             from: currentUser.id,
             fromName: currentUser.isAdmin ? `${currentUser.name}[админ]` : currentUser.name,
             to: targetUser.id,
@@ -283,7 +301,7 @@ io.on('connection', (socket) => {
     // WebRTC сигналинг
     socket.on('webrtc_offer', (data) => {
         const target = users.find(u => u.id === data.targetId);
-        if (target && target.online) {
+        if (target && target.online && target.socketId) {
             io.to(target.socketId).emit('webrtc_offer', {
                 offer: data.offer,
                 from: currentUser.id
@@ -293,7 +311,7 @@ io.on('connection', (socket) => {
     
     socket.on('webrtc_answer', (data) => {
         const target = users.find(u => u.id === data.targetId);
-        if (target && target.online) {
+        if (target && target.online && target.socketId) {
             io.to(target.socketId).emit('webrtc_answer', {
                 answer: data.answer,
                 from: currentUser.id
@@ -303,7 +321,7 @@ io.on('connection', (socket) => {
     
     socket.on('webrtc_ice', (data) => {
         const target = users.find(u => u.id === data.targetId);
-        if (target && target.online) {
+        if (target && target.online && target.socketId) {
             io.to(target.socketId).emit('webrtc_ice', {
                 candidate: data.candidate,
                 from: currentUser.id
@@ -317,6 +335,14 @@ io.on('connection', (socket) => {
             currentUser.online = false;
             currentUser.socketId = null;
             broadcastUsers();
+            
+            // Завершаем все звонки с этим пользователем
+            const userCalls = activeCalls.filter(c => c.from === currentUser.id || c.to === currentUser.id);
+            userCalls.forEach(call => {
+                io.to(call.fromSocket).emit('call_ended');
+                io.to(call.toSocket).emit('call_ended');
+            });
+            activeCalls = activeCalls.filter(c => c.from !== currentUser.id && c.to !== currentUser.id);
         }
     });
 });
@@ -333,7 +359,7 @@ function broadcastUsers() {
     io.emit('users_update', usersList);
 }
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`\n🚀 UNBOUND сервер запущен!`);
     console.log(`📱 http://localhost:${PORT}`);
