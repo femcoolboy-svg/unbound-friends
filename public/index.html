@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UNBOUND | Друзья + Звонки + Админ</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="app" id="app">
+        <!-- АВТОРИЗАЦИЯ -->
+        <div id="authScreen" class="auth-screen">
+            <div class="auth-card">
+                <h1>✨ UNBOUND ✨</h1>
+                <p>Общайся, звони, будь в центре событий</p>
+                <div class="input-group">
+                    <input type="text" id="loginId" placeholder="ID (например: prisanok)" autocomplete="off">
+                </div>
+                <div class="input-group">
+                    <input type="password" id="loginPassword" placeholder="Пароль">
+                </div>
+                <div class="input-group">
+                    <input type="text" id="loginName" placeholder="Имя (при регистрации)">
+                </div>
+                <button id="authBtn" class="btn-primary">🚀 Войти / Зарегистрироваться</button>
+                <p class="hint">⭐ Админ: prisanok / prisanok</p>
+            </div>
+        </div>
+
+        <!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
+        <div id="mainScreen" class="main-screen hidden">
+            <div class="sidebar">
+                <div class="user-profile" id="userProfile">
+                    <div class="avatar" id="userAvatar">👤</div>
+                    <div class="user-info">
+                        <span id="userNameDisplay"></span>
+                        <span id="userBadge"></span>
+                    </div>
+                    <button id="settingsBtn" class="icon-btn">⚙️</button>
+                    <button id="logoutBtn" class="icon-btn">🚪</button>
+                </div>
+                
+                <div class="users-list">
+                    <h3>🟢 Онлайн (<span id="onlineCount">0</span>)</h3>
+                    <div id="usersContainer" class="users-container"></div>
+                </div>
+            </div>
+            
+            <div class="chat-area">
+                <div class="chat-header">
+                    <h2>💬 Общий чат</h2>
+                    <span id="notificationSound">🔔 Звук включён</span>
+                </div>
+                <div class="messages-container" id="messagesContainer"></div>
+                <div class="message-input">
+                    <input type="text" id="messageInput" placeholder="Напиши сообщение...">
+                    <button id="sendBtn" class="btn-primary">📤 Отправить</button>
+                </div>
+            </div>
+            
+            <div class="calls-panel">
+                <h3>📞 Звонки</h3>
+                <div id="activeCallInfo" class="call-info hidden">
+                    <div id="callStatus"></div>
+                    <button id="hangupCallBtn" class="btn-danger">🔴 Завершить звонок</button>
+                </div>
+                <div id="incomingCall" class="incoming-call hidden">
+                    <p>📞 Входящий звонок от <span id="callerName"></span></p>
+                    <button id="acceptCallBtn" class="btn-success">✅ Принять</button>
+                    <button id="rejectCallBtn" class="btn-danger">❌ Отклонить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Настройки профиля -->
+    <div id="settingsModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>⚙️ Настройки профиля</h2>
+            <div class="input-group">
+                <label>Имя</label>
+                <input type="text" id="settingsName" placeholder="Новое имя">
+            </div>
+            <div class="input-group">
+                <label>Аватар (эмодзи)</label>
+                <input type="text" id="settingsAvatar" placeholder="😀" maxlength="2">
+            </div>
+            <div class="input-group">
+                <label>Новый пароль</label>
+                <input type="password" id="settingsPassword" placeholder="Оставь пустым чтобы не менять">
+            </div>
+            <button id="saveSettingsBtn" class="btn-primary">💾 Сохранить</button>
+            <button id="closeSettingsBtn" class="btn-secondary">Закрыть</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/client.js"></script>
+</body>
+</html>
